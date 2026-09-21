@@ -4,4 +4,8 @@ Audio timing editor.  Can be used to (help) create timing tracks for Audacity, x
 # Status
 UNDER CONSTRUCTION
 
-##eof
+# License
+This project is licensed under the Community Source License, Version 1.0.
+This is a source-available license and is not an OSI-approved Open Source license.  See LICENSE.md.
+
+## eof

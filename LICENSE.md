@@ -2,7 +2,7 @@
 
 Version 1.0
 
-Copyright (c) [YEAR] [COPYRIGHT HOLDER]
+Copyright (c)  2026 Don Julien
 
 ## 1. Purpose
 
@@ -183,7 +183,21 @@ Software licensed under copyleft or other licenses with additional requirements 
 
 Nothing in this License requires third-party software to be relicensed under this License when its original license does not permit such relicensing.
 
-## 10. Redistribution
+## 10. Patents
+
+The Copyright Holder hereby covenants that, with respect to any patent claims owned or controlled by the Copyright Holder that necessarily cover the Original Software as distributed under this License, the Copyright Holder will **never assert such patent claims against any person or entity for exercising rights expressly granted by this License**.
+
+This covenant applies only to use of the Original Software and Derivative Works in accordance with this License. It does not grant permission for Commercial Use where this License otherwise requires a Commercial License.
+
+The covenant does not apply to patent claims covering inventions that are not necessarily practiced by the Software, nor does it apply to patents owned or controlled by third parties.
+
+Third-Party Components may be subject to patents or patent licenses separate from this License. Users and distributors are responsible for complying with applicable patent rights and license requirements associated with Third-Party Components.
+
+Nothing in this License grants any license to a third-party patent.
+
+The Copyright Holder makes no representation or warranty that the Software is free from third-party patent claims.
+
+## 11. Redistribution
 
 You may redistribute the unmodified Software for permitted non-commercial purposes provided that:
 
@@ -196,7 +210,7 @@ You may charge a reasonable fee for the physical act of copying, hosting, packag
 
 Charging for the Software itself, or using it as part of a commercial product or service, requires a Commercial License.
 
-## 11. Separate Commercial Licensing
+## 12. Separate Commercial Licensing
 
 The Copyright Holder may grant Commercial Licenses to individuals, organizations, companies, or other parties at the Copyright Holder's discretion.
 
@@ -204,7 +218,7 @@ A Commercial License may contain terms different from this License.
 
 Obtaining a Commercial License does not require the Copyright Holder to make the same commercial rights available to any other party.
 
-## 12. No Additional Restrictions
+## 13. No Additional Restrictions
 
 You may not impose additional restrictions on recipients' rights under this License with respect to the portions of the work covered by this License.
 
@@ -217,7 +231,7 @@ In particular, you may not:
 
 This section does not prevent you from licensing your own original contributions under additional or separate terms where permitted by law.
 
-## 13. Attribution
+## 14. Attribution
 
 Redistributions and Derivative Works must retain reasonable attribution to the Copyright Holder and must retain this License.
 
@@ -225,11 +239,11 @@ You may add additional attribution for your own modifications.
 
 You may not imply that the Copyright Holder endorses a Derivative Work, product, service, or organization without explicit permission.
 
-## 14. Trademarks
+## 15. Trademarks
 
 This License does not grant permission to use any trademarks, service marks, logos, trade names, or other branding of the Copyright Holder, except as reasonably necessary to identify the origin of the Software.
 
-## 15. AI-Assisted Development
+## 16. AI-Assisted Development
 
 The Software may contain code created, suggested, modified, or assisted by artificial intelligence or machine-learning tools.
 
@@ -243,13 +257,13 @@ Nothing in this License grants rights to third-party material merely because suc
 
 Contributors are responsible for reviewing AI-assisted contributions and identifying known Third-Party Components and applicable license requirements where reasonably practical.
 
-## 16. No Warranty
+## 17. No Warranty
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.
 
 TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-## 17. Termination
+## 18. Termination
 
 Any rights granted under this License terminate automatically if you violate its terms.
 
@@ -257,11 +271,11 @@ Rights may be reinstated if the violation is permanently cured and the Copyright
 
 Termination does not affect rights properly granted to other recipients who have complied with this License.
 
-## 18. Governing Law
+## 19. Governing Law
 
 This License shall be interpreted according to the laws applicable in the jurisdiction of the Copyright Holder, except to the extent applicable law requires otherwise.
 
-## 19. Entire Agreement
+## 20. Entire Agreement
 
 This License constitutes the complete license for the Software unless the Copyright Holder explicitly provides additional written terms.
 
@@ -327,4 +341,4 @@ AI assistance does not by itself change the license.
 
 AI-generated or AI-suggested third-party code remains subject to any applicable copyright and license requirements.
 
-##eof
+## eof
