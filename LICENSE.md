@@ -341,4 +341,4 @@ AI assistance does not by itself change the license.
 
 AI-generated or AI-suggested third-party code remains subject to any applicable copyright and license requirements.
 
-## eof
+### -eof-
