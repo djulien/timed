@@ -36,21 +36,25 @@ def set_debug_tab(tab: Optional["DebugTab"]) -> None:
     _debug_tab = tab
 
 
-def debug(level: int, msg: str) -> None:
+#def debug(level: int, msg: str) -> None:
+def debug(level: int, *args, **kwargs):
     """
     Log if level <= current debug level. Includes caller file:line.
     Add a timestamped entry to the debug log if level <= current debug level.
     level 1 = high-level, 99 = very low-level detail.
     """
     if _debug_level <= 0 or level > _debug_level:
-        return
+        return args[-1]  #for inlining last arg
 
     # Caller: skip this frame (debug itself)
+    depth = kwargs.pop('depth', 0) + 1
     try:
         frame = inspect.currentframe()
+        #frame = inspect.stack()[depth]
+#        frame = inspect.getframeinfo(caller_frame_record[0])
         outer = frame.f_back if frame else None
         if outer:
-            fname = Path(outer.f_code.co_filename).name
+            fname = Path(outer.f_code.co_filename).name.replace(".py", "")
             lineno = outer.f_lineno
             caller = f"{fname}:{lineno}"
         else:
@@ -60,8 +64,12 @@ def debug(level: int, msg: str) -> None:
     finally:
         del frame  # avoid reference cycles
 
+    msg = ""
+    for i, arg in enumerate(args):
+        msg += str(arg) + " "
+
     ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    line = f"[{ts} L{level:02d}] {msg}  @{caller}"
+    line = f"[{ts} L{level:02d}] {msg} @{caller}" if msg else ""
     _log_lines.append(line)
     if len(_log_lines) > MAX_LOG_LINES:
         del _log_lines[: len(_log_lines) - MAX_LOG_LINES]
@@ -82,6 +90,7 @@ def debug(level: int, msg: str) -> None:
 
     if _debug_tab is not None:
         _debug_tab.append_line(line)
+    return args[-1]  #for inlining last arg
 
 
 class DebugTab:

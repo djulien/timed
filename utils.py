@@ -11,6 +11,14 @@ import time
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+#RECURSION: from debug_tab import debug
+#def debug(level: int, *args, **kwargs):
+#    msg = ""
+#    for i, arg in enumerate(args):
+#        msg += str(arg) + " "
+#    print(msg)
+#    return args[-1]  #for inlining last arg
+
 
 # These will be set / overridden by main.py constants when imported
 APP_NAME = "timED"
@@ -284,6 +292,7 @@ def discover_tab_plugins() -> list:
     for d in search_dirs:
         for py in sorted(d.glob("*_tab.py")):
             key = str(py.resolve())
+            #debug(9, key)
             if key in seen:
                 continue
             # skip our own editor_tab / debug_tab implementation files if they
@@ -296,10 +305,11 @@ def discover_tab_plugins() -> list:
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
                 if callable(getattr(mod, "onload", None)):
+                    #debug(9, type(mod))
                     modules.append(mod)
             except Exception:
                 continue
-    return modules
+    return sorted(modules)
 
 
 def run_onload_plugins(filepath: str) -> Optional[str]:

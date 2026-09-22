@@ -16,8 +16,13 @@ from utils import (
     get_cursor_pos, set_cursor_pos, DEFAULT_SASH_POS,
     is_probably_text_file, file_meta_summary, run_onload_plugins,
 )
-from debug_tab import debug
-
+#from debug_tab import debug
+def debug(level: int, *args, **kwargs):
+    msg = ""
+    for i, arg in enumerate(args):
+        msg += str(arg) + " "
+    print(msg)
+    return args[-1]  #for inlining last arg
 
 class EditorTab:
     """One tab containing a vertical PanedWindow:
@@ -238,7 +243,7 @@ class EditorTab:
             pass
 
     # ------------------------------------------------------------------ Tab label
-    def OLD_attach_custom_tab(self) -> None:
+    def _attach_custom_tab(self) -> None:
         """Replace the default tab text with our Frame containing label + close button."""
         try:
 #?            self.notebook.tab(self.frame, compound="left")
@@ -279,7 +284,7 @@ class EditorTab:
             self.text.edit_modified(False)
             self._update_line_numbers()
 
-    def request_close(self) -> None:
+    def _request_close(self) -> None:
         if self.on_close_request:
             self.on_close_request(self)
 
