@@ -293,6 +293,7 @@ def discover_tab_plugins() -> list:
         for py in sorted(d.glob("*_tab.py")):
             key = str(py.resolve())
             #debug(9, key)
+            #print("key " + key)
             if key in seen:
                 continue
             # skip our own editor_tab / debug_tab implementation files if they
@@ -301,15 +302,21 @@ def discover_tab_plugins() -> list:
             try:
                 spec = importlib.util.spec_from_file_location(py.stem, py)
                 if spec is None or spec.loader is None:
+                    debug(5, "key " + key + " no spec")
                     continue
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
                 if callable(getattr(mod, "onload", None)):
                     #debug(9, type(mod))
+                    debug(5, f"mod '{mod.__name__} callable")
                     modules.append(mod)
-            except Exception:
+                else:
+                    debug(5, f"mod '{mod.__name__}' !onload")
+            except Exception as exc:
+                debug(5, f"key '{key}' !callable: {exc}")
                 continue
-    return sorted(modules)
+    debug(5, f"found {len(modules)} modules")
+    return sorted(modules, key=lambda m: m.__name__)
 
 
 def run_onload_plugins(filepath: str) -> Optional[str]:
@@ -320,11 +327,27 @@ def run_onload_plugins(filepath: str) -> Optional[str]:
     """
     for mod in discover_tab_plugins():
         try:
+            debug(5, "run " + mod.__name__)
             result = mod.onload(filepath)
             if result:
                 return str(result)
-        except Exception:
+        except Exception as exc:
+            debug(5, f"run {mod.__name__}? {exc}")
             continue
     return None
+
+#def debug(level: int, msg: str) -> None:
+def debug(level: int, *args, **kwargs):
+    """
+    Thin wrapper so utils (and anyone) can log without importing debug_tab
+    at module load time (avoids circular imports).
+    """
+    kwargs['depth'] = kwargs.get('depth', 0) + 1  #show my caller
+    try:
+        from debug_tab import debug as _debug
+        return _debug(level, msg, **kwargs)
+    except Exception:
+        # debug system not loaded yet, or logging disabled – ignore
+        pass
 
 #eof

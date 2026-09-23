@@ -16,13 +16,13 @@ from utils import (
     get_cursor_pos, set_cursor_pos, DEFAULT_SASH_POS,
     is_probably_text_file, file_meta_summary, run_onload_plugins,
 )
-#from debug_tab import debug
-def debug(level: int, *args, **kwargs):
-    msg = ""
-    for i, arg in enumerate(args):
-        msg += str(arg) + " "
-    print(msg)
-    return args[-1]  #for inlining last arg
+from debug_tab import debug
+#def debug(level: int, *args, **kwargs):
+#    msg = ""
+#    for i, arg in enumerate(args):
+#        msg += str(arg) + " "
+#    print(msg)
+#    return args[-1]  #for inlining last arg
 
 class EditorTab:
     """One tab containing a vertical PanedWindow:
@@ -131,21 +131,22 @@ class EditorTab:
         self.label = ttk.Label(self.tab_frame, text=self._label_text())
         self.label.pack(side="left", padx=(4, 2))
 
-        self.close_btn = tk.Label(
-            self.tab_frame,
-            text="✕",
-            fg="#c0392b",
-            cursor="hand2",
-            font=("", 9, "bold"),
-        )
-        self.close_btn.pack(side="left", padx=(0, 4))
-        self.close_btn.bind("<Button-1>", self._request_close)
-        # Also allow middle-click on the tab label area to close
-        self.tab_frame.bind("<Button-2>", self._request_close)
-        self.label.bind("<Button-2>", self._request_close)
+#        self.close_btn = tk.Label(
+#            self.tab_frame,
+#            text="✕",
+#            fg="#c0392b",
+#            cursor="hand2",
+#            font=("", 9, "bold"),
+#        )
+#        self.close_btn.pack(side="left", padx=(0, 4))
+#        self.close_btn.bind("<Button-1>", self._request_close)
+#        # Also allow middle-click on the tab label area to close
+#        self.tab_frame.bind("<Button-2>", self._request_close)
+#        self.label.bind("<Button-2>", self._request_close)
 
-        notebook.add(self.frame, text="")  # text is managed by our custom label
-        notebook.tab(self.frame, text="")  # keep empty; we draw our own
+#        notebook.add(self.frame, text="")  # text is managed by our custom label
+#        notebook.tab(self.frame, text="")  # keep empty; we draw our own
+        notebook.add(self.frame, text=self._label_text())
 
         # After the tab is added we can attach the custom label
         # (Tk requires the tab to exist first)

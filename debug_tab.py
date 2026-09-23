@@ -49,18 +49,24 @@ def debug(level: int, *args, **kwargs):
     # Caller: skip this frame (debug itself)
     depth = kwargs.pop('depth', 0) + 1
     try:
-        frame = inspect.currentframe()
-        #frame = inspect.stack()[depth]
-#        frame = inspect.getframeinfo(caller_frame_record[0])
-        outer = frame.f_back if frame else None
+        #frame = inspect.currentframe()
+        #outer = frame.f_back if frame else None
+        from types import SimpleNamespace as Obj
+        #class ObjectLiteral: pass
+        frame = inspect.stack()[depth]
+        caller_frame_record = inspect.getframeinfo(frame[0])
+        #outer = ObjectLiteral()
+        #outer.f_lineno = caller_frame_record.lineno
+        #outer.f_code =: {co_filename: caller_frame_record.filename}}
+        outer = Obj(f_lineno = caller_frame_record.lineno, f_code = Obj(co_filename = caller_frame_record.filename))
         if outer:
             fname = Path(outer.f_code.co_filename).name.replace(".py", "")
             lineno = outer.f_lineno
             caller = f"{fname}:{lineno}"
         else:
             caller = "?:?"
-    except Exception:
-        caller = "?:?"
+    except Exception as exc:
+        caller = f"?:? {exc}"
     finally:
         del frame  # avoid reference cycles
 
@@ -69,7 +75,7 @@ def debug(level: int, *args, **kwargs):
         msg += str(arg) + " "
 
     ts = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
-    line = f"[{ts} L{level:02d}] {msg} @{caller}" if msg else ""
+    line = f"[{ts} /{level:02d}] {msg} @{caller}" if msg else ""
     _log_lines.append(line)
     if len(_log_lines) > MAX_LOG_LINES:
         del _log_lines[: len(_log_lines) - MAX_LOG_LINES]
