@@ -76,7 +76,7 @@ def set_debug_level(level: int) -> None:
         header = (
             f"# debug log started "
             f"{datetime.datetime.now().isoformat(timespec='seconds')} "
-            f"detail_level={_debug_level}\n"
+            f"detail_level={_debug_level}\n\n"
         )
         path.write_text(header, encoding="utf-8")
 
@@ -183,11 +183,11 @@ def onload(filepath: str, canvas=None, text=None, tab=None) -> bool:
     Claim *.log files. Build controls in canvas; put polled log text in text.
     """
     if not handles(filepath):
-        debug(1, "{red}", filepath, f"'{filepath}' not log")
+        debug(1, f"{{red}}'{filepath}' not log")
         return False   # not handled
     if canvas is None or text is None or tab is None:
         # Claim-only probe (no widgets) – still claim so create_tab paths can use us
-        debug(1, "{green}", filepath, "is log")
+        debug(1, f"{{green}}{filepath} is log")
         return True
 
     state = _LogViewState(tab, filepath)
@@ -200,7 +200,7 @@ def onload(filepath: str, canvas=None, text=None, tab=None) -> bool:
 
     try:
         from utils import debug as _d
-        _d(1, f"log viewer attached to {state.filepath}")
+        _d(1, f"{{blue}}log viewer attached to {state.filepath}")
     except Exception:
         pass
 

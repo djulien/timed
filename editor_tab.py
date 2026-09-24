@@ -231,7 +231,7 @@ class EditorTab:
             # sashpos expects an absolute pixel value from the top of the paned window
             self.paned.sashpos(0, pos)
             self._sash_ready = True
-            debug(3, f"Restored sash for {self.filepath or 'Untitled'} → {pos}px")
+            debug(3, f"{{blue}}Restored sash for {self.filepath or 'Untitled'} → {pos}px")
         except tk.TclError:
             pass
 
@@ -241,7 +241,7 @@ class EditorTab:
         try:
             pos = self.paned.sashpos(0)
             set_sash_pos(self.filepath, pos)
-            debug(3, f"Saved sash {pos}px for {self.filepath or 'Untitled'}")
+            debug(3, f"{{blue}}Saved sash {pos}px for {self.filepath or 'Untitled'}")
         except tk.TclError:
             pass
 
@@ -269,7 +269,7 @@ class EditorTab:
             self.text.mark_set("insert", info.get("index", "1.0"))
             self.text.see("insert")
             self.text.yview_moveto(float(info.get("yview", 0.0)))
-            debug(4, f"Restored cursor for {self.filepath}")
+            debug(4, f"{{blue}}Restored cursor for {self.filepath}")
         except (tk.TclError, ValueError):
             pass
 
@@ -388,7 +388,7 @@ class EditorTab:
                     data = Path(path).read_text(encoding="utf-8", errors="replace")
                     self.text.delete("1.0", "end")
                     insert_styled_text(self.text, data)  #When loading plain text (non-plugin), use styled insert
-                    debug(1, f"Opened text file {path}")
+                    debug(1, f"{{blue}}Opened text file {path}")
                 except Exception as e:
                     messagebox.showerror("Open Error", f"Could not open file:\n{e}")
                     debug(1, f"Failed to open {path}: {e}")

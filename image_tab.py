@@ -30,7 +30,7 @@ def onload(filepath: str, canvas=None, text=None, tab=None):
     p = Path(filepath)
     ext = p.suffix.lower()
     if ext not in IMAGE_EXTS:
-        debug(1, "{red}", p.resolve(), f"'{p.suffix.lower()}' not image")
+        debug(1, f"{{red}}{p.resolve()} '{p.suffix.lower()} not image")
         return False   # not handled
 
     descr = (
@@ -40,15 +40,15 @@ def onload(filepath: str, canvas=None, text=None, tab=None):
     )
 
     if canvas is None:
-        descr += "{{red}}(No canvas available – image not drawn.)\n"
+        descr += f"{{red}}(No canvas available – image not drawn.)\n"
 #        return text
 
     photo = _load_photo(filepath, canvas)
     if photo is None:
         descr += (
-            "{{red}}Could not load image into the graphical panel.\n"
-            "{{red}}PNG/GIF work with plain Tk; for JPEG/BMP/WebP install Pillow:\n"
-            "{{red}}  pip install Pillow\n"
+            f"{{red}}Could not load image into the graphical panel.\n"
+            f"{{red}}PNG/GIF work with plain Tk; for JPEG/BMP/WebP install Pillow:\n"
+            f"{{red}}  pip install Pillow\n"
         )
 #        return text
 
@@ -80,7 +80,7 @@ def onload(filepath: str, canvas=None, text=None, tab=None):
 #        text.insert("1.0", descr)
         insert_styled_text(text, descr)  #use styled text
 
-    debug(1, "{green}", p.resolve(), "image", "{photo.width()}×{photo.height()} px")
+    debug(1, f"{{green}}{p.resolve()} image {photo.width()}×{photo.height()} px")
     return True
 
 

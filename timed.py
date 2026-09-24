@@ -38,6 +38,10 @@ python main.py -fresh report.txt
 
 # Combine
 python main.py -fresh -debug 3 notes.txt
+
+initial prompt:
+Create a  multi-tab file editor that will run on Linux and Windows.  The editor has typical file editor menus and keyboard shortcuts.  The File menu has the typical New, Open/Recent, Save/As, Close menu items.  The Edit menu has the typical Undo/Redo, Cut/Copy/Paste, and Find/Replace menu items.   The Help menu has About, Check for Updates, and a link to documentation/tutorials.  Each open file is  displayed in a separate tab, with the abbreviated base filename as the tab label and an indicator if the contents have been changed but not yet saved.  Also put a little red X on the tab label to allow the tab to be closed.  Structure the program so there is one main source file that handles the menus, a separate source file that renders file contents in the tab, and another source file for utility functions and generic helpers.   When using or suggesting third-party software or code, use only software whose license permits redistribution and modification and allows a larger work to restrict commercial usage. Prefer MIT, BSD, Apache-2.0, or public-domain/CC0 material. Do not copy GPL, AGPL, LGPL, or other copyleft code into the project without first identifying it and obtaining approval.
+
 """
 
 from __future__ import annotations
@@ -245,12 +249,12 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
 
         set_debug_level(debug_level)   # truncates/creates debug.log, stores level
         if debug_level > 0:
-            debug(1, f"Starting {APP_NAME} v{VERSION}  debug_level={debug_level}")
+            debug(1, f"{{pink}}Starting {APP_NAME} v{VERSION}  debug_level={debug_level}")
 
         self._build_ui()
-        self.after(100, self._set_window_icon)   # after first map
+#        self._set_window_icon()
+#        self.after(100, self._set_window_icon)   # after first map
         self.after(500, self._set_window_icon)   # again once WM is ready
-        self._set_window_icon()
         self._build_menus()
         self._bind_shortcuts()
         self._setup_drag_drop()
@@ -276,8 +280,8 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
     def _set_window_icon(self) -> None:
         """Set the window decoration icon (title bar / taskbar)."""
         import os
-        debug(2, "desktop", os.environ.get('XDG_CURRENT_DESKTOP'))
-        debug(2, "shell", os.environ.get('SHELL', '/bin/bash')) 
+        debug(2, f"{{blue}}desktop", os.environ.get('XDG_CURRENT_DESKTOP'))
+        debug(2, f"{{blue}}shell", os.environ.get('SHELL', '/bin/bash')) 
 #Wayland vs X11
 #Some Wayland sessions never take iconphoto from Tk
 #Running under python main.py vs .desktop: Desktop entry Icon= is what the taskbar uses
@@ -287,22 +291,22 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
             if path.is_file():
                 self._app_icon = tk.PhotoImage(file=str(path))
                 self.iconphoto(True, self._app_icon)
-                debug(1, f"icon from file {path}")
-                debug(1, f"Tk {tk.TkVersion}  windowing={self.tk.call('tk', 'windowingsystem')}")
-                debug(1, f"iconphoto exists={hasattr(self, 'iconphoto')}")
-                debug(1, f"_app_icon ref={getattr(self, '_app_icon', None)}")
+                debug(1, f"{{blue}}icon from file {path}")
+                debug(1, f"{{blue}}Tk {tk.TkVersion}  windowing={self.tk.call('tk', 'windowingsystem')}")
+                debug(1, f"{{blue}}iconphoto exists={hasattr(self, 'iconphoto')}")
+                debug(1, f"{{blue}}_app_icon ref={getattr(self, '_app_icon', None)}")
                 return
         except Exception as exc:
-            debug(1, f"PNG icon failed: {exc!r}")
+            debug(1, f"{{red}}PNG icon failed: {exc!r}")
 
         try:
             icon = self._make_app_icon()
             # Keep a reference so Tk does not garbage-collect it
             self._app_icon = icon
             self.iconphoto(True, icon)
-            debug(1, f"iconphoto OK  size={icon.width()}x{icon.height()}")
+            debug(1, f"{{green}}iconphoto OK  size={icon.width()}x{icon.height()}")
         except Exception as exc:
-            debug(1, f"iconphoto FAILED: {exc!r}")
+            debug(1, f"{{red}}iconphoto FAILED: {exc!r}")
 
     def _make_app_icon(self) -> tk.PhotoImage:
         """
@@ -469,7 +473,7 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
                 if Path(path).is_file():
                     self.open_file(path)
                     opened_any = True
-            debug(1, f"Restored session with {len(paths)} file(s)")
+            debug(1, f"{{blue}}Restored session with {len(paths)} file(s)")
 
         # 2. Files named on the command line
         for path in self._files_to_open:
@@ -495,7 +499,7 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
                 self.notebook.select(real_tabs[active_index].frame)
                 real_tabs[active_index].focus()
                 real_tabs[active_index].restore_cursor_state()
-                debug(2, f"Restored focus to tab index {active_index}")
+                debug(2, f"{{blue}}Restored focus to tab index {active_index}")
         except Exception as e:
             debug(1, f"Focus restore failed: {e}")
 

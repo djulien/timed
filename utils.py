@@ -88,6 +88,7 @@ _LOG_COLORS = {
     "orange": "#e67e22",
     "cyan": "#1abc9c",
     "magenta": "#9b59b6",
+    "pink": "#9b59b6",  #easier to spell :P
     "white": "#ecf0f1",
     "gray": "#95a5a6",
     "grey": "#95a5a6",
@@ -493,20 +494,22 @@ def discover_tab_plugins() -> list:
             try:
                 spec = importlib.util.spec_from_file_location(py.stem, py)
                 if spec is None or spec.loader is None:
-                    debug(5, "{red}key " + key + " no spec")
+                    debug(5, f"{{red}}key '{key}' no spec")
                     continue
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
                 if callable(getattr(mod, "onload", None)):
                     #debug(9, type(mod))
-                    debug(5, "{green}", f"mod '{mod.__name__} callable")
+                    debug(5, f"{{green}}mod '{mod.__name__}' callable")
                     modules.append(mod)
                 else:
-                    debug(5, "{red}", f"mod '{mod.__name__}' !onload")
+                    debug(5, f"{{red}}mod '{mod.__name__}' !onload")
             except Exception as exc:
-                debug(5, "{red}", f"key '{key}' !callable: {exc}")
+                debug(5, f"{{red}}key '{key}' !callable: {exc}")
+                import traceback
+                traceback.print_exc()
                 continue
-    debug(5, "{green}", f"found {len(modules)} modules")
+    debug(5, f"{{cyan}}found {len(modules)} tab extensions")
     _tab_plugins_cache = sorted(modules, key=lambda m: m.__name__)
     return _tab_plugins_cache
 
@@ -520,12 +523,12 @@ def run_onload_plugins(filepath: str, canvas=None, text=None, tab=None) -> bool:
     import inspect
 
     candidates = discover_tab_plugins()
-    debug(5, "onload:", len(candidates), "candidate(s)")
+    debug(5, f"{{blue}}onload: {len(candidates)} candidate(s)")
     for mod in candidates:
         try:
             fn = getattr(mod, "onload", None)
             if not callable(fn):
-                debug(5, mod.__name__, "onload !callable")
+                debug(5, f"{{blue}}{mod.__name__} onload !callable")
                 continue
             sig = inspect.signature(fn)
             kwargs = {}
@@ -537,14 +540,14 @@ def run_onload_plugins(filepath: str, canvas=None, text=None, tab=None) -> bool:
                 kwargs["tab"] = tab
             result = fn(filepath, **kwargs) if kwargs else fn(filepath)
             if result:
-                debug(5, mod.__name__, "onload CLAIMED")
+                debug(5, f"{{green}}{mod.__name__} onload CLAIMED")
                 return True
         except Exception as exc:
-            debug(5, mod.__name__, "exc:", exc)
+            debug(5, "{{red}}", mod.__name__, "exc:", exc)
             import traceback
             traceback.print_exc()
             continue
-    debug(5, mod.__name__, "onload !claimed")
+    debug(5, f"{{yellow}}{mod.__name__} onload !claimed")
     return False
 
 
