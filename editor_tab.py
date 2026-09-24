@@ -16,7 +16,7 @@ from utils import (
     get_cursor_pos, set_cursor_pos, DEFAULT_SASH_POS,
     is_probably_text_file, file_meta_summary, run_onload_plugins,
 )
-from debug_tab import debug
+from logview_tab import debug
 #def debug(level: int, *args, **kwargs):
 #    msg = ""
 #    for i, arg in enumerate(args):
@@ -83,20 +83,16 @@ class EditorTab:
         self.paned.add(self.top_frame, weight=0)
 
         # ----- Lower: line numbers + text -----
+        self._has_selection = False
+        self._saved_sel = None
         self.bottom_frame = ttk.Frame(self.paned)
 
-        self.linenumbers = tk.Text(
+        self.linenumbers = tk.Canvas(
             self.bottom_frame,
-            width=4,
-            padx=4,
-            takefocus=0,
-            border=0,
+            width=40,
             highlightthickness=0,
-            state="disabled",
-            wrap="none",
-            font=("Consolas", 11) if tk.TkVersion >= 8.6 else ("Courier", 11),
+            borderwidth=0,
             bg="#f5f5f5",
-            fg="#666666",
         )
         self.text = tk.Text(
             self.bottom_frame,
@@ -105,7 +101,11 @@ class EditorTab:
             maxundo=-1,
             autoseparators=True,
             font=("Consolas", 11) if tk.TkVersion >= 8.6 else ("Courier", 11),
-        )
+            exportselection=False,          # keep selection on this widget
+            selectbackground="#264f78",     # visible on light & dark
+            selectforeground="#ffffff",
+            inactiveselectbackground="#264f78",  # still visible without focus (Tk 8.5+)
+         )
         self.vsb = ttk.Scrollbar(self.bottom_frame, orient="vertical", command=self._on_scroll)
         self.hsb = ttk.Scrollbar(self.bottom_frame, orient="horizontal", command=self.text.xview)
         self.text.configure(yscrollcommand=self._on_text_yscroll, xscrollcommand=self.hsb.set)
@@ -152,11 +152,15 @@ class EditorTab:
         # (Tk requires the tab to exist first)
         self._attach_custom_tab()
 
-        self.text.bind("<<Modified>>", self._on_text_modified)
-#        self.text.bind("<Control-s>", lambda e: None)  # handled by main
         self.text.bind("<KeyRelease>", lambda e: self._update_line_numbers())
         self.text.bind("<ButtonRelease-1>", lambda e: self._update_line_numbers())
+        self.text.bind("<Configure>", lambda e: self._update_line_numbers())
+        self.text.bind("<<Modified>>", self._on_text_modified)
+#        self.text.bind("<Control-s>", lambda e: None)  # handled by main
+        # MouseWheel is platform-specific; after_idle catches scroll
         self.text.bind("<MouseWheel>", lambda e: self.frame.after_idle(self._update_line_numbers))
+        self.text.bind("<Button-4>", lambda e: self.frame.after_idle(self._update_line_numbers))
+        self.text.bind("<Button-5>", lambda e: self.frame.after_idle(self._update_line_numbers))
 
         # Register with notebook (close button comes from CustomNotebook style)
         notebook.add(self.frame, text=self._label_text())
@@ -169,32 +173,58 @@ class EditorTab:
 
     def _on_scroll(self, *args):
         self.text.yview(*args)
-        self.linenumbers.yview(*args)
+        self._update_line_numbers()
 
     def _on_text_yscroll(self, first, last):
         self.vsb.set(first, last)
-        self.linenumbers.yview_moveto(first)
+        self._update_line_numbers()
 
     def _update_line_numbers(self, event=None) -> None:
-        self.linenumbers.configure(state="normal")
-        self.linenumbers.delete("1.0", "end")
+        """
+        One number per logical line (not per wrapped screen row).
+        Uses dlineinfo() so wrapped continuations do not get extra numbers.
+        """
+        self.linenumbers.delete("all")
         try:
             end_line = int(self.text.index("end-1c").split(".")[0])
         except Exception:
             end_line = 1
-        # width based on digits
-        width = max(3, len(str(end_line)))
-        self.linenumbers.configure(width=width)
-        lines = "\n".join(str(i) for i in range(1, end_line + 1))
-        self.linenumbers.insert("1.0", lines)
-        self.linenumbers.configure(state="disabled")
-        # sync scroll
-        try:
-            self.linenumbers.yview_moveto(self.text.yview()[0])
-        except Exception:
-            pass
+        if end_line < 1:
+            return
 
-    # ------------------------------------------------------------------ Sash / cursor (unchanged logic)
+        # Optional override: list of original line numbers (e.g. log filter)
+        orig = getattr(self, "_gutter_orig_nums", None)
+
+        width = 40
+        if orig:
+            width = max(40, 8 + 8 * len(str(max(orig))))
+        else:
+            width = max(40, 8 + 8 * len(str(end_line)))
+        self.linenumbers.configure(width=width)
+
+        # Font metrics for vertical centering of the first display row of each line
+        try:
+            font = self.text.cget("font")
+        except Exception:
+            font = None
+
+        for logical in range(1, end_line + 1):
+            idx = f"{logical}.0"
+            info = self.text.dlineinfo(idx)
+            if info is None:
+                continue  # line not in view (or not yet mapped)
+            x, y, w, h, baseline = info
+            label = str(orig[logical - 1]) if orig and logical <= len(orig) else str(logical)
+            self.linenumbers.create_text(
+                width - 4,
+                y + h // 2,
+                anchor="e",
+                text=label,
+                fill="#666666",
+                font=font,
+            )
+
+    # ------------------------------------------------------------------ Sash / cursor
     def _restore_sash(self) -> None:
         try:
             pos = get_sash_pos(self.filepath)
@@ -242,6 +272,40 @@ class EditorTab:
             debug(4, f"Restored cursor for {self.filepath}")
         except (tk.TclError, ValueError):
             pass
+
+    def save_selection_state(self) -> None:
+        """Called when the user leaves this tab."""
+        try:
+            start = self.text.index("sel.first")
+            end = self.text.index("sel.last")
+            self._saved_sel = (start, end)
+            self._has_selection = True
+        except tk.TclError:
+            self._saved_sel = None
+            self._has_selection = False
+
+    def restore_selection_state(self) -> None:
+        """Called when the user returns to this tab."""
+        if self._saved_sel:
+            try:
+                self.text.tag_remove("sel", "1.0", "end")
+                self.text.tag_add("sel", self._saved_sel[0], self._saved_sel[1])
+                self.text.mark_set("insert", self._saved_sel[1])
+                self.text.see(self._saved_sel[0])
+                self._has_selection = True
+            except tk.TclError:
+                self._saved_sel = None
+                self._has_selection = False
+        else:
+            self._scroll_to_end_if_allowed()
+
+    def _scroll_to_end_if_allowed(self) -> None:
+        if not self._has_selection:
+            self.text.see("end")
+
+    def insert_styled(self, content: str, index: str = "end") -> None:
+        from utils import insert_styled_text
+        insert_styled_text(self.text, content, index)
 
     # ------------------------------------------------------------------ Tab label
     def _attach_custom_tab(self) -> None:
@@ -296,6 +360,69 @@ class EditorTab:
         self._loading = True
         self.text.delete("1.0", "end")
 
+        # Clear previous plugin drawing on the canvas
+        self._plugin_image = None
+        try:
+            self.canvas.delete("plugin_image")
+            for child in self.canvas.winfo_children():
+                child.destroy()
+        except tk.TclError:
+            pass
+
+        # Stop a previous plugin poll timer if any
+        if getattr(self, "_plugin_after_id", None) is not None:
+            try:
+                self.frame.after_cancel(self._plugin_after_id)
+            except Exception:
+                pass
+            self._plugin_after_id = None
+
+        claimed = run_onload_plugins(
+            path, canvas=self.canvas, text=self.text, tab=self
+        )
+
+        if not claimed:
+            from utils import insert_styled_text
+            if is_probably_text_file(path):
+                try:
+                    data = Path(path).read_text(encoding="utf-8", errors="replace")
+                    self.text.delete("1.0", "end")
+                    insert_styled_text(self.text, data)  #When loading plain text (non-plugin), use styled insert
+                    debug(1, f"Opened text file {path}")
+                except Exception as e:
+                    messagebox.showerror("Open Error", f"Could not open file:\n{e}")
+                    debug(1, f"Failed to open {path}: {e}")
+                    self._loading = False
+                    return False
+            else:
+                data = file_meta_summary(path)
+                self.text.delete("1.0", "end")
+                insert_styled_text(self.text, data)  #allow styled
+                debug(1, f"{{yellow}}Opened binary/non-text as summary: {path}")
+
+        self.text.edit_modified(False)
+        self.text.edit_reset()
+        self._loading = False
+        self.dirty = False
+        self.update_tab_label()
+        self._update_line_numbers()
+        self.frame.after(40, self._restore_sash)
+        self.frame.after(50, self.restore_cursor_state)
+        return True
+
+    def OLD_load_file(self, path: str) -> bool:
+        path = str(Path(path).resolve())
+        self.filepath = path
+        self._loading = True
+        self.text.delete("1.0", "end")
+
+        # Clear any previous plugin image reference
+        self._plugin_image = None
+        try:
+            self.canvas.delete("plugin_image")
+        except tk.TclError:
+            pass
+
         # 1. Plugin onload() hooks from *_tab.py
         plugin_content = run_onload_plugins(path)
         if plugin_content is not None:
@@ -332,6 +459,61 @@ class EditorTab:
     def get_content(self) -> str:
         return self.text.get("1.0", "end-1c")
 
+    def apply_styles_to_text_widget(text: tk.Text) -> None:
+        """Re-parse entire widget content and apply tags (keeps {markers} in buffer)."""
+        ensure_style_tags(text)
+        content = text.get("1.0", "end-1c")
+        # clear old style tags
+        for t in text.tag_names():
+            if str(t).startswith("style_"):
+                text.tag_remove(t, "1.0", "end")
+        # walk line by line with absolute positions
+        line_start = "1.0"
+        for line in content.splitlines():
+            line_end = text.index(f"{line_start} lineend")
+            # map visible ranges: markers stay in buffer; tag ranges skip marker spans
+            pos = 0
+            color = bold = italic = underline = False
+            # early timestamp color
+            early = None
+            mt = _TIMESTAMP_RE.match(line)
+            if mt:
+                rest = line[mt.end():]
+                m2 = _STYLE_TAG_RE.match(rest)
+                if m2 and m2.group(1).lower() in _LOG_COLORS:
+                    early = m2.group(1).lower()
+                    color = early
+                    # tag timestamp range
+                    a = text.index(f"{line_start}+{0}c")
+                    b = text.index(f"{line_start}+{mt.end()}c")
+                    for tg in _tags_for_state(early, False, False, False):
+                        text.tag_add(tg, a, b)
+            for m in _STYLE_TAG_RE.finditer(line):
+                # style text between pos and m.start()
+                if m.start() > pos:
+                    a = text.index(f"{line_start}+{pos}c")
+                    b = text.index(f"{line_start}+{m.start()}c")
+                    for tg in _tags_for_state(color, bold, italic, underline):
+                        text.tag_add(tg, a, b)
+                name = m.group(1).lower()
+                if name == "reset":
+                    color = bold = italic = underline = False
+                elif name in _LOG_COLORS:
+                    color = name
+                elif name == "bold":
+                    bold = True
+                elif name == "italic":
+                    italic = True
+                elif name == "underline":
+                    underline = True
+                pos = m.end()
+            if pos < len(line):
+                a = text.index(f"{line_start}+{pos}c")
+                b = text.index(f"{line_start}+{len(line)}c")
+                for tg in _tags_for_state(color, bold, italic, underline):
+                    text.tag_add(tg, a, b)
+            line_start = text.index(f"{line_start}+1l")
+
     def mark_clean(self) -> None:
         self.dirty = False
         self.text.edit_modified(False)
@@ -353,6 +535,12 @@ class EditorTab:
         self.text.focus_set()
 
     def destroy(self) -> None:
+        if getattr(self, "_plugin_after_id", None) is not None:
+            try:
+                self.frame.after_cancel(self._plugin_after_id)
+            except Exception:
+                pass
+            self._plugin_after_id = None
         self.save_current_sash()
         self.save_cursor_state()
         try:

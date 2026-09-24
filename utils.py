@@ -8,16 +8,12 @@ import re
 import platform
 import sys
 import time
+import re
+import tkinter as tk
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, List, Optional
-#RECURSION: from debug_tab import debug
-#def debug(level: int, *args, **kwargs):
-#    msg = ""
-#    for i, arg in enumerate(args):
-#        msg += str(arg) + " "
-#    print(msg)
-#    return args[-1]  #for inlining last arg
+from typing import Any, Dict, List, Optional, Tuple
+#NO-RECURSION: from logview_tab import debug
 
 
 # These will be set / overridden by main.py constants when imported
@@ -47,6 +43,8 @@ def _default_session() -> Dict[str, Any]:
         "cursor_positions": {},   # path -> {"index": "line.col", "yview": float}
         "preferences": {
             "max_recent": 10,
+#            "debug_wrap": False,
+#            "debug_filter": "",
         },
     }
 
@@ -70,6 +68,187 @@ def get_max_recent() -> int:
         return max(1, min(val, 100))   # sane bounds
     except (TypeError, ValueError):
         return 10
+
+# ---------- text styling ----------------
+
+import re
+import tkinter as tk
+from typing import List, Optional, Tuple
+
+# Display tags: {red}, {bold}, {reset}, ...
+_STYLE_TAG_RE = re.compile(r"\{([a-zA-Z]+)\}")
+# Leading debug/log timestamp: [HH:MM:SS.mmm]
+_TIMESTAMP_RE = re.compile(r"^(\[[0-9:.]+])(\s*)")
+
+_LOG_COLORS = {
+    "red": "#e74c3c",
+    "green": "#2ecc71",
+    "blue": "#3498db",
+    "yellow": "#f1c40f",
+    "orange": "#e67e22",
+    "cyan": "#1abc9c",
+    "magenta": "#9b59b6",
+    "white": "#ecf0f1",
+    "gray": "#95a5a6",
+    "grey": "#95a5a6",
+    "black": "#2c3e50",
+}
+
+_FONT_STYLE_TAGS = frozenset({"bold", "italic", "underline"})
+
+
+def ensure_style_tags(text: tk.Text) -> None:
+    """Configure Tk tags once per Text widget."""
+    if getattr(text, "_style_tags_ready", False):
+        return
+    base = text.cget("font")
+    # Derive bold/italic from current font if possible
+    try:
+        family, size = tk.font.nametofont(base).actual("family"), tk.font.nametofont(base).actual("size")
+    except Exception:
+        try:
+            # font might be a tuple string
+            import tkinter.font as tkfont
+            f = tkfont.Font(font=base)
+            family, size = f.actual("family"), f.actual("size")
+        except Exception:
+            family, size = "TkFixedFont", 10
+
+    import tkinter.font as tkfont
+    for name, color in _LOG_COLORS.items():
+        text.tag_configure(f"style_fg_{name}", foreground=color)
+    text.tag_configure("style_bold", font=tkfont.Font(family=family, size=size, weight="bold"))
+    text.tag_configure("style_italic", font=tkfont.Font(family=family, size=size, slant="italic"))
+    text.tag_configure("style_underline", underline=True)
+    # bold+italic combo used when both active
+    text.tag_configure(
+        "style_bold_italic",
+        font=tkfont.Font(family=family, size=size, weight="bold", slant="italic"),
+    )
+    text._style_tags_ready = True
+
+
+def _tags_for_state(color: Optional[str], bold: bool, italic: bool, underline: bool) -> Tuple[str, ...]:
+    tags = []
+    if color and color in _LOG_COLORS:
+        tags.append(f"style_fg_{color}")
+    if bold and italic:
+        tags.append("style_bold_italic")
+    elif bold:
+        tags.append("style_bold")
+    elif italic:
+        tags.append("style_italic")
+    if underline:
+        tags.append("style_underline")
+    return tuple(tags)
+
+
+def parse_styled_line(line: str) -> List[Tuple[str, Tuple[str, ...]]]:
+    """
+    Split one line into (visible_text, tk_tag_tuple) segments.
+    Supports {color}, {bold}, {italic}, {underline}, {reset}.
+    If a color tag appears immediately after a leading [timestamp], that color
+    also applies to the timestamp.
+    """
+    # Detect "timestamp + optional space + {color}" for whole-line-from-start color
+    early_color: Optional[str] = None
+    m = _TIMESTAMP_RE.match(line)
+    if m:
+        rest = line[m.end():]
+        m2 = _STYLE_TAG_RE.match(rest)
+        if m2:
+            name = m2.group(1).lower()
+            if name in _LOG_COLORS:
+                early_color = name
+
+    color: Optional[str] = early_color
+    bold = italic = underline = False
+    segments: List[Tuple[str, Tuple[str, ...]]] = []
+    pos = 0
+
+    for m in _STYLE_TAG_RE.finditer(line):
+        if m.start() > pos:
+            piece = line[pos:m.start()]
+            if piece:
+                segments.append((piece, _tags_for_state(color, bold, italic, underline)))
+        name = m.group(1).lower()
+        if name == "reset":
+            color, bold, italic, underline = None, False, False, False
+        elif name in _LOG_COLORS:
+            color = name
+        elif name == "bold":
+            bold = True
+        elif name == "italic":
+            italic = True
+        elif name == "underline":
+            underline = True
+        # unknown tags: ignored (and not shown)
+        pos = m.end()
+
+    if pos < len(line):
+        piece = line[pos:]
+        if piece:
+            segments.append((piece, _tags_for_state(color, bold, italic, underline)))
+
+    # If early_color was set, re-tag the timestamp prefix with that color
+    if early_color and segments:
+        ts = _TIMESTAMP_RE.match(line)
+        if ts:
+            ts_text = ts.group(1) + ts.group(2)
+            # Rebuild: first segment(s) that display ts_text should include color
+            # Easier approach: prepend handling by painting timestamp in early_color
+            rebuilt: List[Tuple[str, Tuple[str, ...]]] = []
+            remaining_ts = ts_text
+            for piece, tags in segments:
+                if remaining_ts and piece.startswith(remaining_ts):
+                    rebuilt.append((remaining_ts, _tags_for_state(early_color, False, False, False)))
+                    rest = piece[len(remaining_ts):]
+                    if rest:
+                        rebuilt.append((rest, tags))
+                    remaining_ts = ""
+                elif remaining_ts and remaining_ts.startswith(piece):
+                    rebuilt.append((piece, _tags_for_state(early_color, False, False, False)))
+                    remaining_ts = remaining_ts[len(piece):]
+                else:
+                    if remaining_ts:
+                        rebuilt.append((remaining_ts, _tags_for_state(early_color, False, False, False)))
+                        remaining_ts = ""
+                    rebuilt.append((piece, tags))
+            if remaining_ts:
+                rebuilt.insert(0, (remaining_ts, _tags_for_state(early_color, False, False, False)))
+            segments = rebuilt
+
+    return segments if segments else [("", ())]
+
+
+def insert_styled_text(text: tk.Text, content: str, index: str = "end") -> None:
+    """
+    Insert content into a Text widget, honoring {color}/{bold}/…/{reset} tags.
+    Works for full multi-line strings (each line styled independently).
+    """
+    ensure_style_tags(text)
+    lines = content.splitlines(keepends=True)
+    if not lines and content:
+        lines = [content]
+    for raw in lines:
+        if raw.endswith("\n"):
+            line, nl = raw[:-1], "\n"
+        else:
+            line, nl = raw, ""
+        for piece, tags in parse_styled_line(line):
+            if not piece:
+                continue
+            if tags:
+                text.insert(index, piece, tags)
+            else:
+                text.insert(index, piece)
+        if nl:
+            text.insert(index, nl)
+
+
+def strip_style_tags(content: str) -> str:
+    """Visible plain text with {tags} removed (e.g. for save-to-disk)."""
+    return _STYLE_TAG_RE.sub("", content)
 
 
 # ---------- recent files (now use get_max_recent) ----------
@@ -261,21 +440,33 @@ def file_meta_summary(path: str) -> str:
         size = st.st_size
         mtime = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
         return (
-            f"File: {p.name}\n"
-            f"Path: {p.resolve()}\n"
-            f"Size: {size:,} bytes\n"
-            f"Last modified: {mtime}\n"
+            "{{red}}[unclaimed]\n"
+            f"{{blue}}File: {{cyan}}{p.name}\n"
+            f"{{blue}}Path: {p.resolve()}\n"
+            f"{{blue}}Size: {{cyan}}{size:,} bytes\n"
+            f"{{blue}}Last modified: {{cyan}}{mtime}\n"
         )
-    except Exception as e:
-        return f"File: {path}\n(error reading metadata: {e})\n"
+    except Exception as exc:
+        return f"{{blue}}File: {{cyan}}{path}\n{{red}}error reading metadata: {exc}\n"
 
+
+_tab_plugins_cache = None  # list of modules, or None = not loaded yet
+
+def clear_tab_plugins_cache() -> None:
+    global _tab_plugins_cache
+    _tab_plugins_cache = None
 
 def discover_tab_plugins() -> list:
     """
-    Find all *_tab.py modules beside the application (and cwd).
-    Returns list of loaded modules that have an onload callable.
+    Find all *_tab.py modules beside the app (and cwd) that define onload().
+    Results are cached for the rest of the process (plugins are assumed fixed).
     """
+    global _tab_plugins_cache
+    if _tab_plugins_cache is not None:
+        return _tab_plugins_cache
+
     import importlib.util
+
     search_dirs = []
     # directory containing main.py / this package
     try:
@@ -302,52 +493,169 @@ def discover_tab_plugins() -> list:
             try:
                 spec = importlib.util.spec_from_file_location(py.stem, py)
                 if spec is None or spec.loader is None:
-                    debug(5, "key " + key + " no spec")
+                    debug(5, "{red}key " + key + " no spec")
                     continue
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
                 if callable(getattr(mod, "onload", None)):
                     #debug(9, type(mod))
-                    debug(5, f"mod '{mod.__name__} callable")
+                    debug(5, "{green}", f"mod '{mod.__name__} callable")
                     modules.append(mod)
                 else:
-                    debug(5, f"mod '{mod.__name__}' !onload")
+                    debug(5, "{red}", f"mod '{mod.__name__}' !onload")
             except Exception as exc:
-                debug(5, f"key '{key}' !callable: {exc}")
+                debug(5, "{red}", f"key '{key}' !callable: {exc}")
                 continue
-    debug(5, f"found {len(modules)} modules")
-    return sorted(modules, key=lambda m: m.__name__)
+    debug(5, "{green}", f"found {len(modules)} modules")
+    _tab_plugins_cache = sorted(modules, key=lambda m: m.__name__)
+    return _tab_plugins_cache
 
 
-def run_onload_plugins(filepath: str) -> Optional[str]:
+def run_onload_plugins(filepath: str, canvas=None, text=None, tab=None) -> bool:
+    """
+    Call onload(...) on every *_tab.py plugin.
+    Plugins may set text/canvas contents directly.
+    Return True if a plugin claimed the file (truthy onload result).
+    """
+    import inspect
+
+    candidates = discover_tab_plugins()
+    debug(5, "onload:", len(candidates), "candidate(s)")
+    for mod in candidates:
+        try:
+            fn = getattr(mod, "onload", None)
+            if not callable(fn):
+                debug(5, mod.__name__, "onload !callable")
+                continue
+            sig = inspect.signature(fn)
+            kwargs = {}
+            if "canvas" in sig.parameters:
+                kwargs["canvas"] = canvas
+            if "text" in sig.parameters:
+                kwargs["text"] = text
+            if "tab" in sig.parameters:
+                kwargs["tab"] = tab
+            result = fn(filepath, **kwargs) if kwargs else fn(filepath)
+            if result:
+                debug(5, mod.__name__, "onload CLAIMED")
+                return True
+        except Exception as exc:
+            debug(5, mod.__name__, "exc:", exc)
+            import traceback
+            traceback.print_exc()
+            continue
+    debug(5, mod.__name__, "onload !claimed")
+    return False
+
+
+def OLD_run_onload_plugins(filepath: str, canvas=None, tab=None):
+    """
+    Call onload(filepath, canvas=..., tab=...) on every *_tab.py plugin.
+    Return the first non-false result (string to show in the text area),
+    or None if no plugin claims the file.
+
+    Plugins may accept optional keyword args:
+        onload(filepath)
+        onload(filepath, canvas=None)
+        onload(filepath, canvas=None, tab=None)
+    """
+    import inspect
+
+    for mod in discover_tab_plugins():
+        try:
+            fn = getattr(mod, "onload", None)
+            if not callable(fn):
+                continue
+            # Call with as many optional kwargs as the function accepts
+            sig = inspect.signature(fn)
+            kwargs = {}
+            if "canvas" in sig.parameters:
+                kwargs["canvas"] = canvas
+            if "tab" in sig.parameters:
+                kwargs["tab"] = tab
+            debug(5, mod.__name__, kwargs, **kwargs)
+            result = fn(filepath, **kwargs) if kwargs else fn(filepath)
+            if result:
+                return str(result)
+        except Exception:
+            continue
+    return None
+
+def OLD_run_onload_plugins(filepath: str) -> Optional[str]:
     """
     Call onload(filepath) on every *_tab.py plugin.
     Return the first non-false result (expected to be a string to display),
     or None if no plugin claims the file.
     """
+    try:
+        for mod in discover_tab_plugins():
+            try:
+                debug(5, "run " + mod.__name__)
+                #print(mod.__name__)
+                result = mod.onload(filepath)
+                if result:
+                    return str(result)
+            except Exception as exc:
+                debug(5, f"run {mod.__name__}? {exc}")
+                #print(exc)
+                continue
+    except Exception as exc:
+        debug(1, f"run {mod.__name__}: {exc}")
+        #print("no run")
+    return None
+
+def find_create_tab_plugin(filepath: str):
+    """
+    Return (module, create_tab_fn) for the first *_tab.py that both
+    claims this path and exposes create_tab().  Else None.
+    """
+    import inspect
+    path = str(Path(filepath).resolve()) if filepath else ""
     for mod in discover_tab_plugins():
-        try:
-            debug(5, "run " + mod.__name__)
-            result = mod.onload(filepath)
-            if result:
-                return str(result)
-        except Exception as exc:
-            debug(5, f"run {mod.__name__}? {exc}")
+        create = getattr(mod, "create_tab", None)
+        onload = getattr(mod, "onload", None)
+        if not callable(create):
             continue
+        # Prefer explicit handles() if present
+        handles = getattr(mod, "handles", None)
+        claimed = False
+        if callable(handles):
+            try:
+                claimed = bool(handles(path))
+            except Exception:
+                claimed = False
+        elif callable(onload):
+            try:
+                sig = inspect.signature(onload)
+                kwargs = {}
+                if "canvas" in sig.parameters:
+                    kwargs["canvas"] = None
+                if "tab" in sig.parameters:
+                    kwargs["tab"] = None
+                # Probe only: plugins should treat canvas=None as "claim test"
+                result = onload(path, **kwargs) if kwargs else onload(path)
+                claimed = bool(result)
+            except Exception:
+                claimed = False
+        if claimed:
+            return mod, create
     return None
 
 #def debug(level: int, msg: str) -> None:
-def debug(level: int, *args, **kwargs):
+def debug(*args, **kwargs):
     """
     Thin wrapper so utils (and anyone) can log without importing debug_tab
     at module load time (avoids circular imports).
+    TODO: make level optional?
     """
     kwargs['depth'] = kwargs.get('depth', 0) + 1  #show my caller
+    #print(f"debug nest {kwargs['depth']}")
     try:
-        from debug_tab import debug as _debug
-        return _debug(level, msg, **kwargs)
-    except Exception:
+        from logview_tab import debug as _debug
+        return _debug(*args, **kwargs)
+    except Exception as exc:
         # debug system not loaded yet, or logging disabled – ignore
+        print(f"debug wrapper: exc {exc}", file=sys.stderr) #show if can't log
         pass
 
 #eof

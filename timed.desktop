@@ -1,0 +1,7 @@
+#use this if Linux desktop doesn't show icon
+
+[Desktop Entry]
+Name=Timing Editor
+Exec=/usr/bin/python3 /path/to/timed.py
+Icon=/path/to/app_icon.png
+Type=Application

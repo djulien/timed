@@ -11,7 +11,9 @@ structure:
 editor/
 ├── main.py          # Menus, window, notebook, event handling
 ├── editor_tab.py    # Tab content (Text widget + dirty tracking + close button)
-├── debug_tab.py     # Debug log content
+├── logview_tab.py   # Generic log + debug log content
+├── image_tab.py     # image viewer/editor
+├── audio_tab.py     # audio viewer/editor
 └── utils.py         # Helpers (recent files, dialogs, path utilities, etc.)
 
 usage:
@@ -59,12 +61,19 @@ utils.APP_NAME = APP_NAME
 utils.VERSION = VERSION
 
 from editor_tab import EditorTab
-from debug_tab import DebugTab, debug, set_debug_level, get_debug_level
+from logview_tab import (
+    debug, set_debug_level, get_debug_level, debug_log_path,
+#    create_tab as create_debug_tab,
+#    LogViewerTab, 
+)
 from utils import (
     load_recent, add_recent, load_session_data, save_session_data,
     about_text, documentation_url, abbreviated_name,
     get_max_recent, set_preference, get_preference,
+#    find_create_tab_plugin,
 )
+#TODO: remove find_create_tab_plugin if main no longer uses create_tab for logs.
+
 
 # Optional drag-and-drop support (MIT license)
 try:
@@ -226,18 +235,22 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
         self.geometry("1000x700")
         self.minsize(400, 300)
 
-        self.tabs: List[Union[EditorTab, DebugTab]] = []
+#        self.tabs: List[Union[EditorTab, DebugTab]] = []
+        self.tabs: List[EditorTab] = []
         self.recent_menu: Optional[tk.Menu] = None
         self._files_to_open = files_to_open or []
         self._fresh = fresh
-        self._debug_tab: Optional[DebugTab] = None
+        self._debug_tab: Optional[EditorTab] = None
         self._last_tab = None
 
-        set_debug_level(debug_level)
+        set_debug_level(debug_level)   # truncates/creates debug.log, stores level
         if debug_level > 0:
             debug(1, f"Starting {APP_NAME} v{VERSION}  debug_level={debug_level}")
 
         self._build_ui()
+        self.after(100, self._set_window_icon)   # after first map
+        self.after(500, self._set_window_icon)   # again once WM is ready
+        self._set_window_icon()
         self._build_menus()
         self._bind_shortcuts()
         self._setup_drag_drop()
@@ -259,6 +272,63 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
 
         self.status = ttk.Label(self, text="Ready", relief="sunken", anchor="w")
         self.status.pack(side="bottom", fill="x")
+
+    def _set_window_icon(self) -> None:
+        """Set the window decoration icon (title bar / taskbar)."""
+        import os
+        debug(2, "desktop", os.environ.get('XDG_CURRENT_DESKTOP'))
+        debug(2, "shell", os.environ.get('SHELL', '/bin/bash')) 
+#Wayland vs X11
+#Some Wayland sessions never take iconphoto from Tk
+#Running under python main.py vs .desktop: Desktop entry Icon= is what the taskbar uses
+#wmctrl -l / taskbar: Title bar vs dock can use different icons
+        path = Path(__file__).resolve().parent / "app_icon.png"
+        try:
+            if path.is_file():
+                self._app_icon = tk.PhotoImage(file=str(path))
+                self.iconphoto(True, self._app_icon)
+                debug(1, f"icon from file {path}")
+                debug(1, f"Tk {tk.TkVersion}  windowing={self.tk.call('tk', 'windowingsystem')}")
+                debug(1, f"iconphoto exists={hasattr(self, 'iconphoto')}")
+                debug(1, f"_app_icon ref={getattr(self, '_app_icon', None)}")
+                return
+        except Exception as exc:
+            debug(1, f"PNG icon failed: {exc!r}")
+
+        try:
+            icon = self._make_app_icon()
+            # Keep a reference so Tk does not garbage-collect it
+            self._app_icon = icon
+            self.iconphoto(True, icon)
+            debug(1, f"iconphoto OK  size={icon.width()}x{icon.height()}")
+        except Exception as exc:
+            debug(1, f"iconphoto FAILED: {exc!r}")
+
+    def _make_app_icon(self) -> tk.PhotoImage:
+        """
+        Small programmatic icon (no external file).
+        32x32 teal page with a fold — distinctive enough for the title bar.
+        """
+        size = 32
+        img = tk.PhotoImage(width=size, height=size)
+        # Background
+        bg, accent, line = "#2c3e50", "#1abc9c", "#ecf0f1"
+        for y in range(size):
+            for x in range(size):
+                img.put(bg, (x, y))
+        # Page rectangle
+        for y in range(4, 28):
+            for x in range(6, 26):
+                img.put(line, (x, y))
+        # Fold corner
+        for i in range(8):
+            for x in range(18 + i, 26):
+                img.put(accent, (x, 4 + i))
+        # Text lines
+        for y in (12, 16, 20, 24):
+            for x in range(9, 23):
+                img.put(accent if y != 24 else "#3498db", (x, y))
+        return img
 
     def DROP_on_notebook_tab_closed(self, event=None) -> None:
         # event.x / identify already handled; find tab by current close target
@@ -432,6 +502,28 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
         self._update_title()
 
     def _open_debug_tab(self) -> None:
+        """Open the app debug.log through the normal EditorTab + onload plugin path."""
+        if self._debug_tab is not None:
+            return
+        from logview_tab import debug_log_path
+        path = str(debug_log_path())
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        if not Path(path).exists():
+            Path(path).write_text("", encoding="utf-8")
+        # Reuse open_file so EditorTab + debug_tab.onload run
+        before = list(self.tabs)
+        self.open_file(path)
+        # Remember the tab that was just opened (for “last tab” / close tracking)
+        for t in self.tabs:
+            if t not in before and isinstance(t, EditorTab) and t.filepath == path:
+                self._debug_tab = t
+                try:
+                    self.notebook.insert("end", t.frame)
+                except tk.TclError:
+                    pass
+                break
+
+    def OLD_open_debug_tab(self) -> None:
         if self._debug_tab is not None:
             return
         tab = DebugTab(self.notebook, on_close_request=self.close_tab)
@@ -445,7 +537,7 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
         # Do not auto-select the debug tab
 
     # ------------------------------------------------------------------ Tab helpers
-    def current_tab(self) -> Optional[Union[EditorTab, DebugTab]]:
+    def current_tab(self) -> Optional[EditorTab]: #Union[EditorTab, DebugTab]]:
         try:
             current = self.notebook.select()
             for tab in self.tabs:
@@ -497,6 +589,38 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
                 self.notebook.select(tab.frame)
                 return
 
+        # Custom tab plugins (e.g. debug_tab for *.log)
+#needed?        found = find_create_tab_plugin(path)
+        found = None
+        if found is not None:
+            _mod, create_fn = found
+            tab = create_fn(
+                self.notebook,
+                filepath=path,
+                on_close_request=self.close_tab,
+                live_debug=False,
+            )
+            if tab is not None:
+                # insert before debug tab if present (same as EditorTab)
+                if self._debug_tab is not None:
+                    try:
+                        dbg_index = self.notebook.index(self._debug_tab.frame)
+                        self.notebook.insert(dbg_index, tab.frame)
+                        pos = self.tabs.index(self._debug_tab)
+                        self.tabs.insert(pos, tab)
+                    except (tk.TclError, ValueError):
+                        self.tabs.append(tab)
+                else:
+                    self.tabs.append(tab)
+                self.notebook.select(tab.frame)
+                add_recent(path)
+                self._rebuild_recent_menu()
+                if hasattr(tab, "focus"):
+                    tab.focus()
+                self._update_title()
+                debug(1, f"Opened via plugin {getattr(_mod, '__name__', '?')}: {path}")
+                return
+
         tab = EditorTab(
             self.notebook,
             filepath=path,
@@ -526,6 +650,25 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
             tab.destroy()
 
     def save_file(self) -> bool:
+        """
+        Saving:
+        For files on disk without visible tag markers left as-is, use get_content() to save
+        (tags are only stripped in the display path if strip_style_tags was used on save)
+        Tags should normally be left in the file so reload still colors).
+        Default:
+        save raw buffer text including {red} markers (what the user typed).
+        Display applies styles on insert/load.  If the buffer holds already-expanded text without
+        markers (because insert stripped them), saving won’t preserve tags. Currently markers are
+        stripped on display only while inserting styled runs (so Text widget does not contain {red}).
+        For log files that is correct (file on disk still has tags; viewer re-parses each reload).
+        For editable tabs, either:
+        A. Store tags in the widget as real characters and only apply tags via a highlighter pass, or  
+        B. Accept that styled insert is for read-only/plugin/log content.
+
+        For log viewer (file-based) path B is used.
+        For editable tab load, path B will strip file’s {red} markers after load.
+        To keep them editable, run a highlighter over existing text instead of stripping on insert.
+        """
         tab = self.current_tab()
         if not isinstance(tab, EditorTab):
             return False
@@ -559,7 +702,7 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
         tab.set_filepath(path)
         return self.save_file()
 
-    def close_tab(self, tab: Optional[Union[EditorTab, DebugTab]] = None) -> None:
+    def close_tab(self, tab: Optional[EditorTab] = None) -> None: #Union[EditorTab, DebugTab]] = None) -> None:
         if tab is None:
             tab = self.current_tab()
         if not tab:
@@ -598,12 +741,12 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
         self._update_title()
 
     def _on_tab_changed(self, event=None) -> None:
-        # Preserve debug-tab selection when leaving / returning
+        # Preserve tab selection when leaving / returning
         prev = self._last_tab  #getattr(self, "_last_tab", None)
         cur = self.current_tab()
-        if isinstance(prev, DebugTab):
+        if isinstance(prev, EditorTab):
             prev.save_selection_state()
-        if isinstance(cur, DebugTab):
+        if isinstance(cur, EditorTab):
             cur.restore_selection_state()
         self._last_tab = cur
         self._update_title()
@@ -614,8 +757,8 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
             name = abbreviated_name(tab.filepath, 40)
             dirty = " *" if tab.dirty else ""
             self.title(f"{name}{dirty} – {APP_NAME}")
-        elif isinstance(tab, DebugTab):
-            self.title(f"Debug Log – {APP_NAME}")
+#        elif isinstance(tab, DebugTab):
+#            self.title(f"Debug Log – {APP_NAME}")
         else:
             dirty = " *" if (isinstance(tab, EditorTab) and tab.dirty) else ""
             self.title(f"Untitled{dirty} – {APP_NAME}")
