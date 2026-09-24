@@ -14,9 +14,6 @@ pip install tinytag numpy soundfile sounddevice
 # optional for broader format support (especially MP3):
 pip install miniaudio
 
-continuation prompt:
-https://..../timed contains an extensible multi-tab file editor.  the audio_tab.py file opens an mp3/mp4/wav file and extracts meta data to display on  a text panel (tkinter.Text widget). modify audio_tab.py to  display the waveform  in the canvas area (tkinter.Canvas widget) and add typical playback controls, along the lines of a simplified Audacity or media player window.  the waveform display should include typical elements such as horizontal  guides at various db levels, vertical guides showing time units, a play/pause button, a forward/back button, speed and volume controls, zoom in/out controls (horizontal as well as vertical), and show a  playback indicator visually on the waveform as well as  text  with the current playback position and total audio duration.  clicking on the waveform should set the playback position at that point.  typical audio will be 5 minutes or less, but decode the audio in chunks and/or cache the data to avoid   excessive memory usage.  use background threads for long-running processes in order to keep the ui thread responsive.  suggest any other useful features.  When using or suggesting third-party software or code, use only software whose license permits redistribution and modification and allows a larger work to restrict commercial usage. Prefer MIT, BSD, Apache-2.0, or public-domain/CC0 material. Do not copy GPL, AGPL, LGPL, or other copyleft code into the project without first identifying it and obtaining approval.
-
 TODO:
 tool tips
 tab.paned.sashpos(0, 220) !worky
@@ -52,6 +49,7 @@ from tkinter import ttk, messagebox
 
 from utils import debug, insert_styled_text
 
+VERSION = 1.0.5
 AUDIO_EXTS = {".mp3", ".mp4", ".wav"} #, ".m4a", ".flac", ".ogg", ".aiff", ".aif"} #don't need these
 
 # ---------------------------------------------------------------------------

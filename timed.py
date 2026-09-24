@@ -38,10 +38,6 @@ python main.py -fresh report.txt
 
 # Combine
 python main.py -fresh -debug 3 notes.txt
-
-initial prompt:
-Create a  multi-tab file editor that will run on Linux and Windows.  The editor has typical file editor menus and keyboard shortcuts.  The File menu has the typical New, Open/Recent, Save/As, Close menu items.  The Edit menu has the typical Undo/Redo, Cut/Copy/Paste, and Find/Replace menu items.   The Help menu has About, Check for Updates, and a link to documentation/tutorials.  Each open file is  displayed in a separate tab, with the abbreviated base filename as the tab label and an indicator if the contents have been changed but not yet saved.  Also put a little red X on the tab label to allow the tab to be closed.  Structure the program so there is one main source file that handles the menus, a separate source file that renders file contents in the tab, and another source file for utility functions and generic helpers.   When using or suggesting third-party software or code, use only software whose license permits redistribution and modification and allows a larger work to restrict commercial usage. Prefer MIT, BSD, Apache-2.0, or public-domain/CC0 material. Do not copy GPL, AGPL, LGPL, or other copyleft code into the project without first identifying it and obtaining approval.
-
 """
 
 from __future__ import annotations
@@ -57,7 +53,7 @@ from typing import List, Optional, Union
 # Application constants
 # ---------------------------------------------------------------------------
 APP_NAME = "timED"
-VERSION = "1.0.0"
+VERSION = "1.1.4"
 
 # Make the constants available to utils
 import utils
