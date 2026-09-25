@@ -257,7 +257,7 @@ class EditorTab:
             index = self.text.index("insert")
             yview = self.text.yview()[0]
             set_cursor_pos(self.filepath, index, yview)
-            debug(4, f"Saved cursor {index} yview={yview:.3f} for {self.filepath}")
+            debug(4, f"{{blue}}Saved cursor {index} yview={yview:.3f} for {self.filepath}")
         except tk.TclError:
             pass
 

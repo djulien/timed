@@ -38,6 +38,9 @@ python main.py -fresh report.txt
 
 # Combine
 python main.py -fresh -debug 3 notes.txt
+
+# force recompile:
+rm -r __pycache__
 """
 
 from __future__ import annotations
