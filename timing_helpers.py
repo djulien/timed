@@ -78,6 +78,80 @@ HAS_NUMPY = np is not None
 HAS_SOUNDFILE = sf is not None
 HAS_SOUNDDEVICE = sd is not None
 
+# ---------------------------------------------------------------------------
+# Optional metadata / decode helpers (same ones the old audio_tab.py used).
+# Neither is required if ffmpeg/ffprobe are on PATH, but without ffmpeg:
+#   - tinytag supplies title/artist/album/etc. for the text panel, plus a
+#     last-resort duration
+#   - soundfile (above) or miniaudio decode the waveform peaks in-process
+# ---------------------------------------------------------------------------
+OPTIONAL_MISSING: Dict[str, str] = {}  # import_name -> pip package name
+
+try:
+    from tinytag import TinyTag
+except ImportError:
+    TinyTag = None  # type: ignore
+    OPTIONAL_MISSING["tinytag"] = "tinytag"
+
+try:
+    import miniaudio
+except ImportError:
+    miniaudio = None  # type: ignore
+    OPTIONAL_MISSING["miniaudio"] = "miniaudio"
+
+HAS_TINYTAG = TinyTag is not None
+HAS_MINIAUDIO = miniaudio is not None
+
+# Formats each in-process decoder can handle (by extension). libsndfile
+# >= 1.1 (bundled with soundfile >= 0.12 wheels) reads MP3; neither it nor
+# miniaudio reads MP4/M4A, so .mp4 still needs ffmpeg for a waveform.
+_SOUNDFILE_EXTS = {".wav", ".flac", ".ogg", ".aiff", ".aif", ".mp3"}
+_MINIAUDIO_EXTS = {".wav", ".flac", ".ogg", ".mp3"}
+
+
+def installable_missing() -> Dict[str, str]:
+    """Everything worth offering to pip install: playback packages plus
+    the optional metadata/decode ones."""
+    out = dict(PLAYBACK_MISSING)
+    out.update(OPTIONAL_MISSING)
+    return out
+
+
+def read_metadata(path: str) -> Optional[Dict[str, Any]]:
+    """Tag/stream info via TinyTag (same fields the old audio_tab.py
+    showed), or None if tinytag isn't installed or can't read the file.
+    Raises nothing; on a read error returns {"error": "..."}."""
+    if not HAS_TINYTAG:
+        return None
+    try:
+        tag = TinyTag.get(path)
+    except Exception as exc:
+        return {"error": str(exc)}
+    return {
+        "title": getattr(tag, "title", None),
+        "artist": getattr(tag, "artist", None),
+        "album": getattr(tag, "album", None),
+        "duration": getattr(tag, "duration", None),
+        "samplerate": getattr(tag, "samplerate", None),
+        "channels": getattr(tag, "channels", None),
+        "bitrate": getattr(tag, "bitrate", None),
+    }
+
+
+def waveform_backend_for(path: str) -> Optional[str]:
+    """Which decoder decode_waveform_peaks() will use for this file:
+    "ffmpeg", "soundfile", "miniaudio", or None if none can."""
+    ext = os.path.splitext(path)[1].lower()
+    if find_ffmpeg():
+        return "ffmpeg"
+    if HAS_SOUNDFILE and ext in _SOUNDFILE_EXTS:
+        if HAS_MINIAUDIO and ext in _MINIAUDIO_EXTS:
+            return "soundfile (miniaudio fallback)"
+        return "soundfile"
+    if HAS_MINIAUDIO and ext in _MINIAUDIO_EXTS:
+        return "miniaudio"
+    return None
+
 
 # ---------------------------------------------------------------------------
 # Fallback cache/sidecar directory (used only when a media file's own
@@ -182,12 +256,26 @@ def find_ffplay() -> Optional[str]:
     return shutil.which("ffplay")
 
 
+# Why the most recent get_audio_duration_seconds() call's ffprobe/ffmpeg
+# attempts failed (one entry per attempt), so the caller can log the real
+# reason instead of guessing "not on PATH".
+LAST_DURATION_ERRORS: List[str] = []
+
+
+def _tail(text: Optional[str], n: int = 300) -> str:
+    text = (text or "").strip()
+    return text[-n:] if text else "(no output)"
+
+
 def get_audio_duration_seconds(path: str) -> Optional[float]:
     """Best-effort duration lookup via ffprobe (preferred, exact) or by
     parsing ffmpeg's own stderr banner as a fallback. Returns None if
     neither tool is available or duration can't be determined."""
+    LAST_DURATION_ERRORS.clear()
     ffprobe = find_ffprobe()
-    if ffprobe:
+    if not ffprobe:
+        LAST_DURATION_ERRORS.append("ffprobe: not found on PATH")
+    else:
         try:
             proc = subprocess.run(
                 [ffprobe, "-v", "error", "-show_entries", "format=duration",
@@ -195,25 +283,179 @@ def get_audio_duration_seconds(path: str) -> Optional[float]:
                 capture_output=True, text=True, timeout=15,
             )
             value = proc.stdout.strip()
-            if value:
-                return float(value)
-        except Exception:
-            pass
+            try:
+                if value:
+                    return float(value)
+            except ValueError:
+                pass
+            LAST_DURATION_ERRORS.append(
+                f"ffprobe ({ffprobe}) exit {proc.returncode}, stdout={value!r}, stderr: {_tail(proc.stderr)}")
+        except Exception as exc:
+            LAST_DURATION_ERRORS.append(f"ffprobe ({ffprobe}): {type(exc).__name__}: {exc}")
     ffmpeg = find_ffmpeg()
-    if ffmpeg:
+    if not ffmpeg:
+        LAST_DURATION_ERRORS.append("ffmpeg: not found on PATH")
+    else:
         try:
             proc = subprocess.run([ffmpeg, "-i", path], capture_output=True, text=True, timeout=15)
             match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.\d+)", proc.stderr)
             if match:
                 h, m, s = match.groups()
                 return int(h) * 3600 + int(m) * 60 + float(s)
+            LAST_DURATION_ERRORS.append(f"ffmpeg ({ffmpeg}): no Duration in banner: {_tail(proc.stderr)}")
+        except Exception as exc:
+            LAST_DURATION_ERRORS.append(f"ffmpeg ({ffmpeg}): {type(exc).__name__}: {exc}")
+    # No ffmpeg: in-process sources, most exact first. soundfile/miniaudio
+    # count actual frames; TinyTag estimates for VBR MP3s, so it's last --
+    # the waveform is spread over this duration, so an estimate would skew
+    # mark times slightly against real playback.
+    ext = os.path.splitext(path)[1].lower()
+    if HAS_SOUNDFILE and ext in _SOUNDFILE_EXTS:
+        try:
+            info = sf.info(path)
+            if info.samplerate and info.frames > 0:
+                return info.frames / float(info.samplerate)
         except Exception:
             pass
+    if HAS_MINIAUDIO and ext in _MINIAUDIO_EXTS:
+        try:
+            info = miniaudio.get_file_info(path)
+            if info.sample_rate and info.num_frames > 0:
+                return info.num_frames / float(info.sample_rate)
+        except Exception:
+            pass
+    meta = read_metadata(path)
+    if meta and meta.get("duration"):
+        return float(meta["duration"])
     return None
 
 
 def decode_waveform_peaks(path: str, start_sec: float, duration_sec: float,
                            target_buckets: int, sample_rate: int = 22050) -> List[Tuple[float, float]]:
+    """Min/max waveform peaks for [start_sec, start_sec+duration_sec).
+    Uses ffmpeg when it's on PATH (any format, bounded memory); otherwise
+    falls back to soundfile, then miniaudio (the old audio_tab.py's
+    decoders). Returns [] if nothing can decode the file."""
+    backend = waveform_backend_for(path)
+    if backend == "ffmpeg":
+        return _decode_peaks_ffmpeg(path, start_sec, duration_sec, target_buckets, sample_rate)
+    if not duration_sec or duration_sec <= 0:
+        return []
+    target_buckets = max(20, min(4000, int(target_buckets)))
+    ext = os.path.splitext(path)[1].lower()
+    if HAS_SOUNDFILE and ext in _SOUNDFILE_EXTS:
+        try:
+            peaks = _decode_peaks_soundfile(path, start_sec, duration_sec, target_buckets)
+            if peaks:
+                return peaks
+        except Exception:
+            pass  # e.g. older libsndfile without MP3 support -> try miniaudio
+    if HAS_MINIAUDIO and ext in _MINIAUDIO_EXTS:
+        return _decode_peaks_miniaudio(path, start_sec, duration_sec, target_buckets, sample_rate)
+    return []
+
+
+class _PeakAccumulator:
+    """Streams mono float samples in, emits (min, max) per bucket of
+    `samples_per_bucket`, stopping at `target_buckets`. Uses numpy when
+    available, else a pure-Python loop (same as the ffmpeg path)."""
+
+    def __init__(self, samples_per_bucket: int, target_buckets: int):
+        self.spb = max(1, int(samples_per_bucket))
+        self.target = target_buckets
+        self.peaks: List[Tuple[float, float]] = []
+        self._carry = None  # numpy path
+        self._cur_min, self._cur_max, self._count = 1.0, -1.0, 0  # pure-Python path
+
+    @property
+    def full(self) -> bool:
+        return len(self.peaks) >= self.target
+
+    def feed(self, mono) -> None:
+        if self.full:
+            return
+        if HAS_NUMPY:
+            data = np.asarray(mono, dtype=np.float32)
+            if self._carry is not None and len(self._carry):
+                data = np.concatenate((self._carry, data))
+            n_full = min(len(data) // self.spb, self.target - len(self.peaks))
+            if n_full > 0:
+                blocks = data[: n_full * self.spb].reshape(n_full, self.spb)
+                self.peaks.extend(zip(blocks.min(axis=1).tolist(), blocks.max(axis=1).tolist()))
+            self._carry = data[n_full * self.spb:]
+            return
+        for v in mono:
+            if v < self._cur_min:
+                self._cur_min = v
+            if v > self._cur_max:
+                self._cur_max = v
+            self._count += 1
+            if self._count >= self.spb:
+                self.peaks.append((self._cur_min, self._cur_max))
+                self._cur_min, self._cur_max, self._count = 1.0, -1.0, 0
+                if self.full:
+                    return
+
+    def finish(self) -> List[Tuple[float, float]]:
+        if not self.full:
+            if HAS_NUMPY:
+                if self._carry is not None and len(self._carry):
+                    self.peaks.append((float(self._carry.min()), float(self._carry.max())))
+            elif self._count > 0:
+                self.peaks.append((self._cur_min, self._cur_max))
+        return self.peaks
+
+
+def _decode_peaks_soundfile(path: str, start_sec: float, duration_sec: float,
+                             target_buckets: int) -> List[Tuple[float, float]]:
+    with sf.SoundFile(path) as f:
+        sr = f.samplerate
+        start_frame = max(0, int(start_sec * sr))
+        total = max(1, int(duration_sec * sr))
+        if start_frame:
+            f.seek(start_frame)
+        acc = _PeakAccumulator(total // target_buckets, target_buckets)
+        remaining = total
+        while remaining > 0 and not acc.full:
+            block = f.read(min(65536, remaining), dtype="float32", always_2d=True)
+            if len(block) == 0:
+                break
+            remaining -= len(block)
+            acc.feed(block.mean(axis=1) if HAS_NUMPY else [sum(r) / len(r) for r in block])
+        return acc.finish()
+
+
+def _decode_peaks_miniaudio(path: str, start_sec: float, duration_sec: float,
+                             target_buckets: int, sample_rate: int) -> List[Tuple[float, float]]:
+    # Same call the old audio_tab.py used (explicit int sample rate --
+    # 0/None doesn't work), resampled down to mono at `sample_rate`, which
+    # is plenty for display and keeps the in-memory decode small.
+    try:
+        decoded = miniaudio.decode_file(path, nchannels=1, sample_rate=sample_rate)
+    except Exception:
+        return []
+    samples = decoded.samples  # array.array("h"), mono
+    sr = decoded.sample_rate or sample_rate
+    a = max(0, int(start_sec * sr))
+    b = min(len(samples), a + max(1, int(duration_sec * sr)))
+    if b <= a:
+        return []
+    total = b - a
+    acc = _PeakAccumulator(total // target_buckets, target_buckets)
+    CHUNK = 65536
+    for i in range(a, b, CHUNK):
+        chunk = samples[i:min(b, i + CHUNK)]
+        if HAS_NUMPY:
+            acc.feed(np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0)
+        else:
+            acc.feed([v / 32768.0 for v in chunk])
+        if acc.full:
+            break
+    return acc.finish()
+
+
+def _decode_peaks_ffmpeg(path: str, start_sec: float, duration_sec: float,
+                          target_buckets: int, sample_rate: int = 22050) -> List[Tuple[float, float]]:
     """Decode a time range [start_sec, start_sec+duration_sec) of the given
     media file into a coarse min/max waveform with `target_buckets` points.
 
@@ -654,11 +896,24 @@ class SoundDevicePlaybackEngine(PlaybackEngine):
     def load(self, media_path: str) -> bool:
         self._data = None
         self._sr = None
-        if not (HAS_NUMPY and HAS_SOUNDFILE and HAS_SOUNDDEVICE):
+        if not (HAS_NUMPY and HAS_SOUNDDEVICE):
             return False
-        try:
-            data, sr = sf.read(media_path, dtype="float32", always_2d=True)
-        except Exception:
+        data = sr = None
+        if HAS_SOUNDFILE:
+            try:
+                data, sr = sf.read(media_path, dtype="float32", always_2d=True)
+            except Exception:
+                data = None
+        if data is None and HAS_MINIAUDIO:
+            # Same fallback the old audio_tab.py's _load_pcm had.
+            try:
+                decoded = miniaudio.decode_file(media_path)
+                data = np.frombuffer(decoded.samples, dtype=np.int16).astype(np.float32) / 32768.0
+                data = data.reshape(-1, max(1, decoded.nchannels))
+                sr = decoded.sample_rate
+            except Exception:
+                data = None
+        if data is None:
             return False
         self._data = data
         self._sr = sr
@@ -788,7 +1043,8 @@ def make_playback_engine(engine: Optional[str] = None) -> PlaybackEngine:
     still works out of the box on a machine that has ffmpeg but not the
     pip stack, without the caller needing to know why."""
     choice = engine or ACTIVE_ENGINE
-    if choice == "sounddevice" and not (HAS_NUMPY and HAS_SOUNDFILE and HAS_SOUNDDEVICE) and find_ffplay():
+    if choice == "sounddevice" and not (HAS_NUMPY and (HAS_SOUNDFILE or HAS_MINIAUDIO) and HAS_SOUNDDEVICE) \
+            and find_ffplay():
         choice = "ffplay"
     if choice == "ffplay":
         return FfplayPlaybackEngine()

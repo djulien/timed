@@ -227,13 +227,30 @@ class EditorTab:
     # ------------------------------------------------------------------ Sash / cursor
     def _restore_sash(self) -> None:
         try:
-            pos = get_sash_pos(self.filepath)
+            # A plugin's onload() may set tab.preferred_sash (used when this
+            # file has no saved position yet) and tab.min_sash (a floor, so
+            # a panel with its own toolbars can't be restored too small to
+            # show its content). Either may be an int or a zero-arg callable,
+            # evaluated here -- i.e. after the plugin's widgets have been
+            # laid out and have real requested sizes.
+            preferred = self._sash_hint("preferred_sash")
+            minimum = self._sash_hint("min_sash") or 0
+            pos = max(get_sash_pos(self.filepath, default=preferred), minimum)
             # sashpos expects an absolute pixel value from the top of the paned window
             self.paned.sashpos(0, pos)
             self._sash_ready = True
             debug(3, f"{{blue}}Restored sash for {self.filepath or 'Untitled'} → {pos}px")
         except tk.TclError:
             pass
+
+    def _sash_hint(self, name: str) -> Optional[int]:
+        value = getattr(self, name, None)
+        if callable(value):
+            try:
+                value = value()
+            except Exception:
+                value = None
+        return int(value) if value else None
 
     def _on_sash_released(self, event=None) -> None:
         if not self._sash_ready:
@@ -376,6 +393,10 @@ class EditorTab:
             except Exception:
                 pass
             self._plugin_after_id = None
+
+        # Panel-size hints belong to whichever plugin claims *this* load
+        self.preferred_sash = None
+        self.min_sash = None
 
         claimed = run_onload_plugins(
             path, canvas=self.canvas, text=self.text, tab=self

@@ -28,24 +28,25 @@ left out of this port:
     and available (FfplayPlaybackEngine, same file) for a future fallback;
     flip timing_helpers.ACTIVE_ENGINE to switch.
 
-Dependencies: this plugin's own waveform decode/rendering only needs
-ffmpeg/ffprobe on PATH (same as the Sequence Editor originally required)
--- no additional pip package is needed just to see and edit marks/tracks.
-Only the *active* (sounddevice) playback engine needs the numpy/
-soundfile/sounddevice pip packages; if they're missing, waveform editing
-still works and the Play controls show an "Install missing packages"
-prompt, following the same pattern audio_tab.py uses for its own
-dependencies (see _show_missing_playback_ui / _install_packages below).
+Dependencies: the waveform is decoded with ffmpeg/ffprobe when they're on
+PATH; otherwise in-process with soundfile (WAV/FLAC/OGG/AIFF, and MP3 with
+libsndfile >= 1.1), falling back to miniaudio for MP3 -- the same decoders
+the old audio_tab.py used. MP4 audio still needs ffmpeg. tinytag (also from
+audio_tab.py) supplies the title/artist/album/etc. shown in the text panel.
+Playback (sounddevice engine) needs numpy + sounddevice + soundfile or
+miniaudio. Anything missing is listed in the text panel and offered via
+the "Install missing packages" button; marks/tracks editing never
+depends on it.
 
-Known integration note: utils.discover_tab_plugins() tries *_tab.py
-plugins in alphabetical order and the first one whose onload() returns
-truthy claims the file. "audio_tab.py" sorts before "waveform_tab.py",
-so as shipped, audio_tab.py's own onload() will claim .mp3/.mp4/.wav
-first and this plugin will never run. Resolving that (e.g. retiring or
-renaming audio_tab.py, or narrowing its claimed extensions) is a
-deliberate decision left to you rather than something this file changes
-on its own -- audio_tab.py's stem-separation feature has no equivalent
-here and you may want to keep it.
+Integration note: utils.discover_tab_plugins() tries *_tab.py plugins in
+alphabetical order and the first one whose onload() returns truthy claims
+the file. The old audio_tab.py (which also claimed .mp3/.mp4/.wav) has
+been retired as audio-oldtab.py, which no longer matches *_tab.py, so
+this plugin now handles audio files.
+
+Panel sizing: this plugin doesn't move the sash itself; it sets
+tab.min_sash / tab.preferred_sash and editor_tab._restore_sash() applies
+them (see WaveformController.min_panel_height).
 """
 
 from __future__ import annotations
@@ -155,6 +156,42 @@ def _make_magnifier_icon(sign: str, size: int = 14, color: str = "#333333", bg: 
 # status area) -- but scoped to *playback only*, not the whole plugin, so
 # marks/tracks editing still works even before/without installing it.
 # ---------------------------------------------------------------------------
+
+def _decoder_hint(filepath):
+    """One-line explanation of what's needed to decode this file, for the
+    canvas error message and the text panel."""
+    ext = Path(filepath).suffix.lower()
+    if ext == ".mp4":
+        return "MP4 audio needs ffmpeg/ffprobe on PATH."
+    return "Needs ffmpeg/ffprobe on PATH, or: pip install soundfile (or miniaudio)."
+
+
+def _num_fmt(val, fmt) -> str:
+    if isinstance(val, (int, float)):
+        return f"{val:{fmt}}"
+    return "\u2014" if val is None else str(val)
+
+
+def _metadata_text(filepath):
+    """The old audio_tab.py's TinyTag metadata block, as styled text."""
+    meta = th.read_metadata(filepath)
+    if meta is None:
+        return "{yellow}tinytag not installed \u2013 limited metadata (pip install tinytag)\n"
+    if "error" in meta:
+        debug(1, f"{{red}}tinytag error: {meta['error']}")
+        return f"{{red}}tinytag error: {meta['error']}\n"
+    dash = "\u2014"
+    dur = th.format_time_ms(meta["duration"]) if meta.get("duration") else dash
+    return (
+        f"{{blue}}Title:  {{cyan}}{meta.get('title') or dash}\n"
+        f"{{blue}}Artist: {{cyan}}{meta.get('artist') or dash}\n"
+        f"{{blue}}Album:  {{cyan}}{meta.get('album') or dash}\n"
+        f"{{blue}}Duration: {{cyan}}{dur}\n"
+        f"{{blue}}Sample rate: {{cyan}}{_num_fmt(meta.get('samplerate'), '.0f')}\n"
+        f"{{blue}}Channels: {{cyan}}{_num_fmt(meta.get('channels'), '.0f')}\n"
+        f"{{blue}}Bitrate: {{cyan}}{_num_fmt(meta.get('bitrate'), '.1f')}\n"
+    )
+
 
 def _install_packages(packages, status_callback):
     """Run `python -m pip install ...` and return (success, message).
@@ -311,25 +348,71 @@ class WaveformController:
         # Missing-playback-dependency prompt (hidden unless actually needed;
         # see _refresh_playback_availability). Placed in the same row so it
         # doesn't block marks/tracks editing above the fold.
-        self.install_btn = ttk.Button(play_bar, text="Install playback packages",
+        self.install_btn = ttk.Button(play_bar, text="Install missing packages",
                                        command=self._on_install_clicked)
         self._refresh_playback_availability()
 
         self.canvas._waveform_toolbars = toolbars
+        self._toolbars = toolbars
+
+    # ------------------------------------------------------------------ panel sizing
+    # editor_tab.py restores each tab's sash from session data, defaulting
+    # to utils.DEFAULT_SASH_POS (60px) -- enough for a bare canvas, but this
+    # plugin packs two toolbar rows above its canvas in that same pane, so
+    # at 60px the canvas is squeezed to ~0px and the waveform never shows.
+    # These two are handed to the tab as tab.min_sash / tab.preferred_sash
+    # (see onload()) and are evaluated when editor_tab restores the sash,
+    # i.e. after the toolbars have real requested heights.
+    MIN_WORK_HEIGHT = 60       # smallest useful waveform area
+    PREFERRED_WORK_HEIGHT = 130
+
+    def _toolbar_height(self):
+        total = 0
+        for bar in getattr(self, "_toolbars", []):
+            try:
+                total += max(bar.winfo_reqheight(), 1)
+            except tk.TclError:
+                pass
+        return total
+
+    def min_panel_height(self):
+        tracks_h = (len(self.tracks) + 1) * self.TRACK_HEIGHT
+        return self._toolbar_height() + self.MIN_WORK_HEIGHT + tracks_h
+
+    def preferred_panel_height(self):
+        tracks_h = (len(self.tracks) + 1) * self.TRACK_HEIGHT
+        return self._toolbar_height() + self.PREFERRED_WORK_HEIGHT + tracks_h
+
+    def _canvas_size(self):
+        """Actual canvas size, or its configured size while it isn't mapped
+        yet (winfo_width/height report 1, not 0, for an unmapped widget, so
+        a plain `or default` fallback never kicks in)."""
+        c = self.canvas
+        w, h = c.winfo_width(), c.winfo_height()
+        if w <= 1:
+            w = 600
+        if h <= 1:
+            try:
+                h = int(float(c.cget("height")))
+            except Exception:
+                h = 160
+        return w, h
 
     def _refresh_playback_availability(self):
         """Show/hide the "install missing playback packages" button based
         on whether the active engine's dependencies are present. Doesn't
         block the waveform/marks/tracks UI -- only affects the Play
         controls' usability."""
-        if th.PLAYBACK_MISSING and isinstance(self.engine, th.SoundDevicePlaybackEngine):
+        playback_missing = bool(th.PLAYBACK_MISSING) and isinstance(self.engine, th.SoundDevicePlaybackEngine)
+        if playback_missing or th.OPTIONAL_MISSING:
             self.install_btn.pack(side="left")
-            self.play_status_var.set("Playback packages missing")
+            if playback_missing:
+                self.play_status_var.set("Playback packages missing")
         else:
             self.install_btn.pack_forget()
 
     def _on_install_clicked(self):
-        packages = list(th.PLAYBACK_MISSING.values())
+        packages = list(th.installable_missing().values())
         if not packages:
             return
         self.install_btn.configure(state="disabled", text="Installing...")
@@ -413,9 +496,13 @@ class WaveformController:
                 else:
                     duration = th.get_audio_duration_seconds(self.filepath)
                     if duration is None:
-                        result["error"] = "Could not determine audio duration (is ffmpeg/ffprobe on PATH?)"
+                        result["error"] = "Could not determine audio duration.\n" + _decoder_hint(self.filepath)
+                        result["details"] = list(th.LAST_DURATION_ERRORS)
                         return
                     peaks = th.decode_waveform_peaks(self.filepath, 0.0, duration, 2000)
+                    if not peaks:
+                        result["error"] = "Could not decode waveform data.\n" + _decoder_hint(self.filepath)
+                        return
                     th.save_waveform_cache(self.filepath, duration, peaks)
                     result["duration"] = duration
                     result["peaks"] = peaks
@@ -433,6 +520,8 @@ class WaveformController:
             if "error" in result:
                 self._show_waveform_error(result["error"])
                 debug(1, f"{{red}}waveform_tab load error: {result['error']}")
+                for line in result.get("details", []):
+                    debug(1, f"{{red}}  {line}")
                 return
             self._finish_initial_waveform(result["duration"], result["peaks"])
 
@@ -452,8 +541,7 @@ class WaveformController:
         self._duration_text_base = "Duration: unavailable"
         self.duration_label.configure(text=self._duration_text_base)
         self.canvas.delete("all")
-        w = self.canvas.winfo_width() or 600
-        h = self.canvas.winfo_height() or 160
+        w, h = self._canvas_size()
         self.canvas.create_text(w // 2, h // 2, text=message, fill="#e08080", width=w - 20, justify="center")
 
     # ------------------------------------------------------------------ zoom / pan
@@ -878,12 +966,12 @@ class WaveformController:
 
     # ------------------------------------------------------------------ hit-testing
     def _time_at_x(self, x):
-        w = self.canvas.winfo_width() or 1
+        w = self._canvas_size()[0]
         frac = max(0.0, min(1.0, x / w))
         return self.view_start + frac * (self.view_end - self.view_start)
 
     def _track_layout(self):
-        total_h = self.canvas.winfo_height() or 160
+        total_h = self._canvas_size()[1]
         reserved = (len(self.tracks) + 1) * self.TRACK_HEIGHT
         work_height = max(60, total_h - reserved)
         return {"total_h": total_h, "work_height": work_height, "track_top": work_height}
@@ -911,7 +999,7 @@ class WaveformController:
     def _mark_and_edge_at_x(self, x, pool=None):
         if pool is None:
             pool = [m for m in self.marks if m.get("track_id") is None]
-        w = self.canvas.winfo_width() or 1
+        w = self._canvas_size()[0]
         span = self.view_end - self.view_start
         if span <= 0:
             return None, None
@@ -954,7 +1042,7 @@ class WaveformController:
         layout = self._track_layout()
         if not (0 <= y < layout["work_height"]):
             return None
-        w = self.canvas.winfo_width() or 1
+        w = self._canvas_size()[0]
         span = self.view_end - self.view_start
         x_of = lambda t: (t - self.view_start) / span * w
         if mark["type"] == "range":
@@ -1468,7 +1556,7 @@ class WaveformController:
     def render_waveform(self):
         c = self.canvas
         c.delete("all")
-        w = c.winfo_width() or 600
+        w = self._canvas_size()[0]
         layout = self._track_layout()
         h = layout["work_height"]
         mid_y = h // 2
@@ -1710,14 +1798,25 @@ def onload(filepath: str, canvas=None, text=None, tab=None):
         f"{{blue}}Audio: {{cyan}}{p.name}\n"
         f"{{blue}}Path:  {p.resolve()}\n"
     )
+    descr += _metadata_text(str(p.resolve()))
+
+    backend = th.waveform_backend_for(str(p.resolve()))
+    if backend:
+        descr += f"\n{{blue}}Waveform decoder: {{cyan}}{backend}\n"
+    else:
+        descr += f"\n{{red}}Waveform decoder: none available \u2013 {_decoder_hint(filepath)}\n"
     engine_name = "sounddevice (trackED's own)" if th.ACTIVE_ENGINE == "sounddevice" else "ffplay (Sequence Editor's original)"
     descr += f"{{blue}}Playback engine: {{cyan}}{engine_name}\n"
-    if th.PLAYBACK_MISSING:
-        descr += "\n{yellow}Missing playback packages (waveform/marks still work without them):\n"
+
+    if th.PLAYBACK_MISSING or th.OPTIONAL_MISSING:
+        descr += "\n{yellow}Missing packages (use the Install button, or pip install):\n"
         for pkg in th.PLAYBACK_MISSING.values():
-            descr += f"{{red}}  - {pkg}  (pip install {pkg})\n"
+            descr += f"{{red}}  - {pkg}  (playback)\n"
+        notes = {"tinytag": "metadata above", "miniaudio": "MP3 decode fallback, optional"}
+        for key, pkg in th.OPTIONAL_MISSING.items():
+            descr += f"{{yellow}}  - {pkg}  ({notes.get(key, 'optional')})\n"
     else:
-        descr += "\n{green}All playback packages are present.\n"
+        descr += "\n{green}All recommended packages are present.\n"
 
     descr += (
         "\n{blue}Mouse: {cyan}click{blue}=new point mark  {cyan}drag{blue}=new range  "
@@ -1743,13 +1842,18 @@ def onload(filepath: str, canvas=None, text=None, tab=None):
                 old.stop_and_release()
             except Exception:
                 pass
-        try:
-            if tab is not None and hasattr(tab, "paned"):
-                tab.paned.sashpos(0, 220)
-        except Exception:
-            pass
         # Keep a reference so it isn't garbage-collected.
-        canvas._waveform_controller = WaveformController(canvas, text, str(p.resolve()), tab=tab)
+        controller = WaveformController(canvas, text, str(p.resolve()), tab=tab)
+        canvas._waveform_controller = controller
+        # Don't call tab.paned.sashpos() here: this runs inside EditorTab's
+        # load_file(), before the tab is mapped, and editor_tab's own
+        # _restore_sash() runs ~40ms later and overwrites it with the saved
+        # (or 60px default) position -- which is why the waveform canvas
+        # ended up squeezed to nothing under its toolbars. Instead, hand
+        # editor_tab size hints it applies when it restores the sash.
+        if tab is not None:
+            tab.min_sash = controller.min_panel_height
+            tab.preferred_sash = controller.preferred_panel_height
 
     if text is not None:
         text.delete("1.0", "end")

@@ -306,11 +306,15 @@ def add_recent(path: str) -> List[str]:
     return recent
 
 
-def get_sash_pos(filepath: Optional[str]) -> int:
+def get_sash_pos(filepath: Optional[str], default: Optional[int] = None) -> int:
+    """Saved sash position for this file, else `default` (a plugin's
+    preferred panel height, if it gave one), else DEFAULT_SASH_POS."""
+    if default is None:
+        default = DEFAULT_SASH_POS
     if not filepath:
-        return DEFAULT_SASH_POS
+        return int(default)
     key = str(Path(filepath).resolve())
-    return int(load_session_data().get("sash_positions", {}).get(key, DEFAULT_SASH_POS))
+    return int(load_session_data().get("sash_positions", {}).get(key, default))
 
 
 def set_sash_pos(filepath: Optional[str], pos: int) -> None:
