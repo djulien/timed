@@ -56,7 +56,7 @@ from typing import List, Optional, Union
 # Application constants
 # ---------------------------------------------------------------------------
 APP_NAME = "timED"
-VERSION = "1.1.4"
+VERSION = "1.2.0"
 
 # Make the constants available to utils
 import utils
@@ -404,8 +404,23 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
         self.bind_all("<Control-s>", lambda e: self.save_file())
         self.bind_all("<Control-S>", lambda e: self.save_file_as())  # Shift
         self.bind_all("<Control-w>", lambda e: self.close_current())
-        self.bind_all("<Control-z>", lambda e: self.undo())
-        self.bind_all("<Control-y>", lambda e: self.redo())
+        # Deliberately NOT bound here: Ctrl-Z/Ctrl-Y. EditorTab's Text
+        # widget is created with undo=True, which gives it Tk's own
+        # native Ctrl-Z/Ctrl-Y key bindings (built into every Text
+        # widget, independent of anything this app binds). Having
+        # bind_all ALSO call self.undo()/self.redo() on the very same
+        # keypress meant every Ctrl-Z fired twice -- Tk's native binding
+        # plus this one -- silently undoing two steps (or erroring past
+        # the end of the stack) instead of one. Since a menu click
+        # doesn't trigger Tk's native key binding, Edit > Undo/Redo still
+        # work correctly via self.undo()/self.redo() with no change; only
+        # the keyboard shortcut needed to go, and the Text widget's own
+        # binding covers it. (waveform_tab.py's canvas -- a plain Canvas,
+        # with no native undo binding of its own -- binds Ctrl-Z/Ctrl-Y
+        # directly on itself instead, for its marks/tracks undo; that's
+        # the one place this app-wide bind_all approach was never safe.)
+#no        self.bind_all("<Control-z>", lambda e: self.undo())
+#no        self.bind_all("<Control-y>", lambda e: self.redo())
         self.bind_all("<Control-f>", lambda e: self.find())
         self.bind_all("<Control-h>", lambda e: self.replace())
         # Platform-specific quit
@@ -953,7 +968,7 @@ class EditorApp(TkinterDnD.Tk if HAS_DND else tk.Tk):  # type: ignore
 
         # Remember open files for next launch
         save_session_data(self._collect_session())
-        debug(1, "Session saved, exiting")
+        debug(1, "{{pink}}Session saved, exiting")
         self.destroy()
 
 

@@ -72,10 +72,13 @@ def set_debug_level(level: int) -> None:
     if _debug_level > 0:
         path = debug_log_path()
         path.parent.mkdir(parents=True, exist_ok=True)
+#        from zoneinfo import ZoneInfo
+#        local_tz = ZoneInfo("America/Los_Angeles") 
         # Truncate at start of a debug session
         header = (
             f"# debug log started "
-            f"{datetime.datetime.now().isoformat(timespec='seconds')} "
+#            f"{datetime.datetime.now().astimezone().isoformat(timespec='seconds')} "
+            f"{datetime.datetime.now().astimezone().strftime('%Y-%m-%dT%H:%M:%S %z %Z')} "
             f"detail_level={_debug_level}\n\n"
         )
         path.write_text(header, encoding="utf-8")
