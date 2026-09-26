@@ -18,6 +18,10 @@ pip install miniaudio
 # optional vocal / non-vocal stem partitioning:
 pip install demucs torch
 
+NOTE:
+This plug-in tab conflicts with waveform_tab (both claim audio files).
+This one is renamed (and discontinued) to let waveform_tab handle audio files.
+
 TODO:
 tab.paned.sashpos(0, 220) !worky
 double free or corruption (out), Aborted (core dumped)  in skip_back / skip_fwd
@@ -318,7 +322,7 @@ def _downsample_peaks(audio: "np.ndarray", max_peaks: int) -> "np.ndarray":
 # Cache + stem paths
 # ---------------------------------------------------------------------------
 def _app_version() -> str:
-    """Best-effort main application version (from utils / timed)."""
+    """Best-effort main application version (from utils / tracked)."""
     try:
         import utils
         return str(getattr(utils, "VERSION", "?"))
@@ -327,7 +331,7 @@ def _app_version() -> str:
 
 def _cache_path(filepath: str) -> Path:
     p = Path(filepath)
-    return p.with_name(p.stem + "-timed.json")
+    return p.with_name(p.stem + "-tracked.json")
 
 def _stem_paths(filepath: str) -> Tuple[Path, Path]:
     p = Path(filepath)

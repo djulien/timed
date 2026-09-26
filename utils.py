@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 # These will be set / overridden by main.py constants when imported
-APP_NAME = "timED"
+APP_NAME = "trackED"
 VERSION = "1.0.0"
 clean_name = re.sub(r'[^\x20-\x7E]', '_', APP_NAME).lower()
 

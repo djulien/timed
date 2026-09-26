@@ -55,7 +55,7 @@ from typing import List, Optional, Union
 # ---------------------------------------------------------------------------
 # Application constants
 # ---------------------------------------------------------------------------
-APP_NAME = "timED"
+APP_NAME = "trackED"
 VERSION = "1.2.0"
 
 # Make the constants available to utils

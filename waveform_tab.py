@@ -1,5 +1,5 @@
 """
-waveform_tab.py -- waveform + timing-marks/tracks editor plugin for timED.
+waveform_tab.py -- waveform + timing-marks/tracks editor plugin for trackED.
 
 Discovered automatically because this file matches *_tab.py (see
 utils.discover_tab_plugins). Claims .mp3/.mp4/.wav and draws a waveform
@@ -8,7 +8,7 @@ Canvas panel, with playback controls and Export Timing (xLights/LRC/
 Audacity) in a right-click track menu.
 
 Ported from the Sequence Editor project's tabs.py (an earlier, standalone
-multi-tab editor this session also worked on), adapted to timED's
+multi-tab editor this session also worked on), adapted to trackED's
 plugin/onload() contract and generic EditorTab (sash position, cursor/
 selection state, and the text pane are all handled by editor_tab.py
 itself -- this plugin only owns the canvas). Two things were deliberately
@@ -16,14 +16,14 @@ left out of this port:
 
   - The Sequence Editor's onload() *scripting* feature -- a small Python
     sandbox letting a saved script generate marks/tracks programmatically.
-    That's a different, unrelated use of the name "onload" than timED's
+    That's a different, unrelated use of the name "onload" than trackED's
     own plugin-discovery onload() this file implements; to avoid any
     confusion between the two, and because it's excluded from this port,
     it now lives in repl-todo.py, disabled, for possible reactivation
     later.
   - Its own ffplay-based playback engine is not the *active* one here --
     per the task this file was written for, playback now goes through a
-    port of timED's own approach instead (see timing_helpers.py:
+    port of trackED's own approach instead (see timing_helpers.py:
     SoundDevicePlaybackEngine). The ffplay engine is still fully wrapped
     and available (FfplayPlaybackEngine, same file) for a future fallback;
     flip timing_helpers.ACTIVE_ENGINE to switch.
@@ -381,8 +381,8 @@ class WaveformController:
         c.bind("<Shift-Tab>", self._on_key_shift_tab)
         c.bind("<ISO_Left_Tab>", self._on_key_shift_tab)
         # Bound directly on the canvas (not via bind_all on the app), same
-        # fix as timed.py's own undo()/redo() -- see the module docstring
-        # of the Ctrl-Z/Ctrl-Y fix in timed.py itself. A Text widget's
+        # fix as trackED.py's own undo()/redo() -- see the module docstring
+        # of the Ctrl-Z/Ctrl-Y fix in trackED.py itself. A Text widget's
         # native undo binding and an app-wide bind_all would double-fire;
         # the canvas has no native undo binding to conflict with, so this
         # is the one safe place for marks/tracks undo/redo shortcuts.
@@ -513,7 +513,7 @@ class WaveformController:
 
     def _mark_changed(self, record_history=True):
         """Marks/tracks are saved eagerly (like the waveform cache),
-        rather than tied to timED's own text-file Save flow -- they live
+        rather than tied to trackED's own text-file Save flow -- they live
         in their own "<mediafile>-marks.json" sidecar (see
         timing_helpers.save_marks), so there's nothing to lose by not
         going through File > Save."""
@@ -1710,7 +1710,7 @@ def onload(filepath: str, canvas=None, text=None, tab=None):
         f"{{blue}}Audio: {{cyan}}{p.name}\n"
         f"{{blue}}Path:  {p.resolve()}\n"
     )
-    engine_name = "sounddevice (timED's own)" if th.ACTIVE_ENGINE == "sounddevice" else "ffplay (Sequence Editor's original)"
+    engine_name = "sounddevice (trackED's own)" if th.ACTIVE_ENGINE == "sounddevice" else "ffplay (Sequence Editor's original)"
     descr += f"{{blue}}Playback engine: {{cyan}}{engine_name}\n"
     if th.PLAYBACK_MISSING:
         descr += "\n{yellow}Missing playback packages (waveform/marks still work without them):\n"

@@ -2,7 +2,7 @@
 timing_helpers.py -- generic (non-Tk) logic for waveform_tab.py.
 
 Ported from the Sequence Editor project's media_utils.py, trimmed to what
-waveform_tab.py actually needs and adapted to live inside timED as a
+waveform_tab.py actually needs and adapted to live inside trackED as a
 *_tab.py plugin's helper module rather than a standalone app's data layer.
 Nothing here imports tkinter or touches a GUI widget, so it can be used
 (and unit-tested) independent of Tk, exactly like media_utils.py was.
@@ -11,7 +11,7 @@ Covers:
   - time formatting (format_time, format_time_ms)
   - waveform peak decoding via ffmpeg, plus a per-file JSON cache
   - marks/tracks persistence (a "<mediafile>-marks.json" sidecar, matching
-    the sash/cursor sidecar-free convention timED's own utils.py uses for
+    the sash/cursor sidecar-free convention trackED's own utils.py uses for
     its *centralized* session.json -- marks/tracks use a per-file sidecar
     instead, same as the waveform cache below, so they travel with the
     media file rather than living in one growing session file)
@@ -19,7 +19,7 @@ Covers:
   - external timing-format exporters: xLights (.xtiming), LRC (.lrc),
     Audacity labels (.txt)
   - two playback engine wrappers behind one common interface: a
-    SoundDevicePlaybackEngine (timED's own approach -- numpy/soundfile/
+    SoundDevicePlaybackEngine (trackED's own approach -- numpy/soundfile/
     sounddevice, real audio output, no external binary) and an
     FfplayPlaybackEngine (the Sequence Editor's original approach --
     shells out to ffplay). SoundDevicePlaybackEngine is active by
@@ -29,7 +29,7 @@ Covers:
 Optional third-party imports (numpy, soundfile, sounddevice) are probed
 at import time and degrade gracefully -- see HAS_NUMPY / HAS_SOUNDFILE /
 HAS_SOUNDDEVICE and PLAYBACK_MISSING below. waveform_tab.py uses those to
-decide whether to show timED's "missing packages -> offer to pip install"
+decide whether to show trackED's "missing packages -> offer to pip install"
 UI (see its _show_missing_playback_ui), following the same pattern
 audio_tab.py already uses for its own dependencies.
 """
@@ -637,7 +637,7 @@ class PlaybackEngine:
         pass
 
 class SoundDevicePlaybackEngine(PlaybackEngine):
-    """timED's own approach (see audio_tab.py): soundfile decodes the
+    """trackED's own approach (see audio_tab.py): soundfile decodes the
     whole file into memory once, sounddevice.play() outputs a sliced
     chunk. Speed is applied by simple nearest-neighbor resampling, which
     changes pitch along with tempo -- a real trade-off against
@@ -773,7 +773,7 @@ class FfplayPlaybackEngine(PlaybackEngine):
 # SoundDevicePlaybackEngine is currently the preferred engine (more direct control)
 
 # Which engine waveform_tab.py should use by default. "sounddevice" is
-# timED's own approach (per the task this file was written for); "ffplay"
+# trackED's own approach (per the task this file was written for); "ffplay"
 # is the Sequence Editor's original approach, wrapped above and fully
 # working, but disabled here -- flip this (or pass engine="ffplay" to
 # make_playback_engine) to reactivate it.

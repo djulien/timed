@@ -2,7 +2,7 @@
 repl-todo.py -- the Sequence Editor's onload() *scripting* feature, excluded
 from this port, kept here in case it's reactivated later.
 
-IMPORTANT NAMING NOTE: this is a different, unrelated thing from timED's own
+IMPORTANT NAMING NOTE: this is a different, unrelated thing from trackED's own
 plugin-discovery onload(filepath, canvas, text, tab) that waveform_tab.py
 implements. That one is a *developer* extension point -- a *_tab.py module
 beside the app, tried in turn until one claims a file. THIS onload() is a
@@ -11,7 +11,7 @@ whenever the file loads and can programmatically create timing marks/tracks
 -- more like a very small, purpose-built REPL/macro layer on top of the
 marks/tracks data model waveform_tab.py already provides. The two happen to
 share a name by coincidence of two projects independently choosing it; they
-are not related, and this module does not use timED's plugin discovery at
+are not related, and this module does not use trackED's plugin discovery at
 all (it doesn't match *_tab.py, on purpose, so it's never auto-discovered).
 
 Not wired into anything: nothing in waveform_tab.py imports this module.
@@ -563,7 +563,7 @@ class OnloadReplMixin:
         This lived in the Sequence Editor's App class (seqed.py), not the
         tab, since it also handled the "run automatically on file open"
         and "run again on File > Reload" cases -- neither of which have
-        an equivalent in timED yet either."""
+        an equivalent in trackED yet either."""
         pass  # not wired -- see the docstring above
 
 
